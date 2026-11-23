@@ -23,4 +23,6 @@ export const NPCS: NpcDef[] = [
   { id: 'ysolde_echo', name: 'The Other Ysolde', title: 'An echo', hue: 300, glyph: 'q', desc: 'Ysolde Quill as she might have been: grey, translucent, furious.' },
 ];
 
+import { ACT1 } from './act1/index';
+NPCS.push(...ACT1.npcs);
 export const NPC_BY_ID: Record<string, NpcDef> = Object.fromEntries(NPCS.map((n) => [n.id, n]));

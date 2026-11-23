@@ -174,7 +174,7 @@ export interface GameState {
   saveId: string;
   createdAt: number;
   playtimeSec: number;
-  chapter: 'prologue' | 'act1';
+  chapter: 'prologue' | 'act1' | 'act2';
   difficulty: Difficulty;
   rules: { permadeath: boolean; limitedRest: boolean };
   party: Character[];            // player first, then all recruited companions

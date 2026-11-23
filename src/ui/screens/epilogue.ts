@@ -3,9 +3,12 @@ import { h, modal } from '../dom';
 import { COMPANION_BY_ID } from '../../data/companions';
 import { activeCompanionIds } from '../../engine/state';
 import { relationshipSummary } from '../../engine/companionMind';
+import { evalCond } from '../../engine/conditions';
+import { ACT1_EPILOGUE } from '../../data/act1/epilogue';
 
 /** End-of-prologue summary: consequences, companions, and the honest state of the build. */
-export function showEpilogue(app: App): void {
+export function showEpilogue(app: App, act = 'prologue'): void {
+  if (act === 'act1') { showAct1Epilogue(app); return; }
   const s = app.state!;
   const f = s.flags;
   const lines: string[] = [];
@@ -32,4 +35,22 @@ export function showEpilogue(app: App): void {
       h('button', { class: 'btn ghost', onclick: () => { close(); app.showMenu(); } }, 'Main menu'))), { wide: true, closable: false });
   // After the epilogue the party is back in Hollowmere at dawn.
   if (s.location.mapId !== 'hollowmere') app.travel('hollowmere', 25, 14);
+}
+
+/** End of Act I: consequences so far, honest note about the build. Lines are driven by Act I flags. */
+export function showAct1Epilogue(app: App): void {
+  const s = app.state!;
+  const f = s.flags;
+  const lines = ACT1_EPILOGUE.filter((l) => { try { return evalCond(s, l.if); } catch { return false; } }).map((l) => l.text);
+  modal('Whispers of the Veil — End of Act I', (close) => h('div', { class: 'epilogue prose' },
+    h('p', null, 'Behind you, Valdros flickers between its lost lives. Ahead, the road to Solmara. Somewhere above it all, a man who never lies has learned your name.'),
+    h('h4', null, 'What Act I has written'), h('ul', null, lines.map((l) => h('li', null, l))),
+    h('h4', null, 'Your companions'), h('ul', null, activeCompanionIds(s).map((id) => h('li', null, h('b', null, COMPANION_BY_ID[id].name), ': ', relationshipSummary(s.companions[id])))),
+    h('div', { class: 'panel notice' }, h('h4', null, 'End of the current build'),
+      h('p', null, 'You have completed Act I. Act II — Kingdoms of Ash (Solmara, the Iron Mountains, the Ember Wastes, the Fortress of the Fallen King) is designed in STORY_BIBLE.md but not yet implemented. Your save keeps every choice.'),
+      h('p', null, 'You can keep exploring Elyndra’s Act I regions, finish side quests and personal quests, and save your game.')),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', onclick: () => { close(); app.autosave('act I epilogue'); } }, 'Continue exploring'),
+      h('button', { class: 'btn ghost', onclick: () => { close(); app.showMenu(); } }, 'Main menu'))), { wide: true, closable: false });
+  void f;
 }

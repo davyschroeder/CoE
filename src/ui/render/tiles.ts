@@ -7,6 +7,9 @@ const PALETTES: Record<Tileset, Record<string, string>> = {
   cathedral: { floor: '#4a4844', alt: '#514f4a', wall: '#2f2d2b', top: '#4a4642', road: '#5a5650', path: '#5a5040' },
   undercroft: { floor: '#3a3634', alt: '#403b38', wall: '#1f1c1b', top: '#2f2a28', road: '#3a3634', path: '#3a3634' },
   vault: { floor: '#262a38', alt: '#2b3042', wall: '#101320', top: '#1c2135', road: '#262a38', path: '#262a38' },
+  forest: { floor: '#2d3d24', alt: '#324428', wall: '#3b3026', top: '#4f4030', road: '#5a5040', path: '#5b4a33' },
+  ruins: { floor: '#6a665c', alt: '#706b60', wall: '#8c867a', top: '#a59f92', road: '#7d776a', path: '#5f5546' },
+  dome: { floor: '#3a3a4a', alt: '#40404f', wall: '#1c1c28', top: '#2c2c3c', road: '#3a3a4a', path: '#3a3a4a' },
 };
 
 function hash(x: number, y: number): number {
@@ -30,6 +33,7 @@ export function drawTile(ctx: CanvasRenderingContext2D, ch: string, x: number, y
     case ':': fill(p.path); dot('rgba(0,0,0,0.2)', 3); break;
     case '.': fill(floor); if (set !== 'town') { ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.strokeRect(px + 0.5, py + 0.5, s - 1, s - 1); } break;
     case 'r': fill('#6a2d2d'); break;
+    case '_': fill('#6b5236'); ctx.strokeStyle = 'rgba(0,0,0,0.3)'; for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(px, py + (i * s) / 4); ctx.lineTo(px + s, py + (i * s) / 4); ctx.stroke(); } break;
     case '#': case 'W': {
       fill(ch === 'W' ? '#4b3828' : p.wall);
       ctx.fillStyle = ch === 'W' ? '#6d5038' : p.top;

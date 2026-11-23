@@ -109,7 +109,7 @@ export function makeMeta(s: GameState, slot: string, auto: boolean): SaveMeta {
   return {
     slot, name: slot === 'auto' ? 'Autosave' : slot === 'quick' ? 'Quicksave' : `Save ${slot.replace('slot', '')}`,
     playerName: s.party[0].name, level: s.party[0].level, classId: s.party[0].classId, location,
-    chapter: s.chapter === 'prologue' ? 'Prologue' : 'Act I', savedAt: Date.now(), playtimeSec: Math.round(s.playtimeSec), auto,
+    chapter: ({ prologue: 'Prologue', act1: 'Act I', act2: 'Act II' } as Record<string, string>)[s.chapter] ?? s.chapter, savedAt: Date.now(), playtimeSec: Math.round(s.playtimeSec), auto,
   };
 }
 

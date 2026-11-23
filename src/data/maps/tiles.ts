@@ -41,6 +41,7 @@ export const TILES: Record<string, TileDef> = {
   'v': { name: 'Chasm', walk: false, los: false },
   's': { name: 'Stairs', walk: true, los: false },
   'x': { name: 'Bone pile', walk: true, los: false, difficult: true },
+  '_': { name: 'Wooden planks', walk: true, los: false },
   'L': { name: 'The Lantern Tree', walk: false, los: true, light: 5, cover: 2 },
 };
 

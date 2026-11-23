@@ -1,6 +1,8 @@
 import type { MapDef } from './types';
 import { GRIDS } from './grids';
 import { CQ_OBJECTS } from '../companionQuests';
+import { ACT1_MAPS } from './act1';
+import { ACT1 } from '../act1/index';
 
 const FESTIVAL = '!bell_rang';
 const NIGHT = 'bell_rang';
@@ -20,14 +22,15 @@ export const HOLLOWMERE: MapDef = {
     { id: 'north_gate', kind: 'exit', name: 'North Gate — Cathedral Road', x: 24, y: 0, w: 3, h: 1, if: NIGHT, to: { map: 'cathedral', x: 17, y: 27 } },
     { id: 'gate_closed', kind: 'trigger', name: 'North Gate', x: 23, y: 1, w: 5, h: 1, if: FESTIVAL, dialogue: 'gate_closed', blocks: true },
     { id: 'inn_door', kind: 'exit', name: 'The Lantern & Lamb', x: 10, y: 15, to: { map: 'inn', x: 10, y: 12 } },
-    { id: 'south_road', kind: 'inspect', name: 'South Road', x: 25, y: 33, desc: 'The road south winds back toward the lowlands you came from. Whatever is happening in Hollowmere, it is happening here.' },
+    { id: 'south_road_exit', kind: 'exit', name: 'The Roads of Elyndra (travel)', x: 24, y: 33, w: 3, if: 'prologue_complete', to: { map: 'world', x: 0, y: 0 } },
+    { id: 'south_road', kind: 'inspect', name: 'South Road', x: 25, y: 33, if: '!prologue_complete', desc: 'The road south winds back toward the lowlands you came from. Whatever is happening in Hollowmere, it is happening here.' },
     // ── Festival NPCs
     { id: 'maren', kind: 'npc', name: 'Sister Maren Ash', x: 21, y: 15, if: FESTIVAL, dialogue: 'maren', glyph: 'M', blocks: true },
-    { id: 'maren_night', kind: 'npc', name: 'Sister Maren Ash', x: 26, y: 3, if: NIGHT, dialogue: 'maren', glyph: 'M', blocks: true },
+    { id: 'maren_night', kind: 'npc', name: 'Sister Maren Ash', x: 26, y: 3, if: 'bell_rang && !prologue_complete', dialogue: 'maren', glyph: 'M', blocks: true },
     { id: 'mayor', kind: 'npc', name: 'Mayor Edda Brannock', x: 24, y: 11, if: FESTIVAL, dialogue: 'mayor', glyph: 'E', blocks: true },
-    { id: 'mayor_night', kind: 'npc', name: 'Mayor Edda Brannock', x: 23, y: 8, if: NIGHT, dialogue: 'mayor', glyph: 'E', blocks: true },
+    { id: 'mayor_night', kind: 'npc', name: 'Mayor Edda Brannock', x: 23, y: 8, if: 'bell_rang && !prologue_complete', dialogue: 'mayor', glyph: 'E', blocks: true },
     { id: 'hale', kind: 'npc', name: 'Captain Roderic Hale', x: 27, y: 13, if: FESTIVAL, dialogue: 'hale', glyph: 'H', blocks: true },
-    { id: 'hale_night', kind: 'npc', name: 'Captain Roderic Hale', x: 26, y: 14, if: NIGHT, dialogue: 'hale', glyph: 'H', blocks: true },
+    { id: 'hale_night', kind: 'npc', name: 'Captain Roderic Hale', x: 26, y: 14, if: 'bell_rang && !prologue_complete', dialogue: 'hale', glyph: 'H', blocks: true },
     { id: 'wenna', kind: 'npc', name: 'Old Wenna', x: 11, y: 25, dialogue: 'wenna', glyph: 'W', blocks: true },
     { id: 'pell', kind: 'npc', name: 'Pell', x: 16, y: 21, if: FESTIVAL, dialogue: 'pell', glyph: 'p', blocks: true },
     { id: 'garrick', kind: 'npc', name: 'Garrick Dunmore', x: 32, y: 12, dialogue: 'garrick', glyph: 'G', blocks: true, if: '!bell_rang || shop_cleared || questdone:sq_fog_rescue || rescued_count>=1' },
@@ -164,6 +167,7 @@ export const VAULT: MapDef = {
   ],
 };
 
-export const MAPS: MapDef[] = [HOLLOWMERE, INN, CATHEDRAL, UNDERCROFT, VAULT];
-for (const { map, object } of CQ_OBJECTS) MAPS.find((m) => m.id === map)?.objects.push(object);
+export const MAPS: MapDef[] = [HOLLOWMERE, INN, CATHEDRAL, UNDERCROFT, VAULT, ...ACT1_MAPS];
+for (const { map, object } of [...CQ_OBJECTS, ...ACT1.objects]) MAPS.find((m) => m.id === map)?.objects.push(object);
+for (const m of MAPS) if (ACT1.enter[m.id]) m.enter = ACT1.enter[m.id];
 export const MAP_BY_ID: Record<string, MapDef> = Object.fromEntries(MAPS.map((m) => [m.id, m]));

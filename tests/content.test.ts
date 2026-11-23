@@ -104,7 +104,7 @@ describe('content integrity', () => {
         if (o.kind === 'npc' && !tile(ch).walk) problems.push(`${m.id}.${o.id}: NPC on blocked tile '${ch}'`);
         if (o.dialogue && !DIALOGUE_BY_ID[o.dialogue]) problems.push(`${m.id}.${o.id}: dialogue ${o.dialogue} missing`);
         if (o.encounter && !ENCOUNTER_BY_ID[o.encounter]) problems.push(`${m.id}.${o.id}: encounter missing`);
-        if (o.to) {
+        if (o.to && o.to.map !== 'world') {
           const dest = MAPS.find((x) => x.id === o.to!.map);
           if (!dest) problems.push(`${m.id}.${o.id}: destination map missing`);
           else if (!tile(dest.grid[o.to.y]?.[o.to.x] ?? '#').walk) problems.push(`${m.id}.${o.id}: destination ${o.to.x},${o.to.y} not walkable`);

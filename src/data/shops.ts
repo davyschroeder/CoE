@@ -43,4 +43,6 @@ export const SHOPS: ShopDef[] = [
   },
 ];
 
+import { ACT1 } from './act1/index';
+SHOPS.push(...ACT1.shops);
 export const SHOP_BY_ID: Record<string, ShopDef> = Object.fromEntries(SHOPS.map((s) => [s.id, s]));

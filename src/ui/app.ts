@@ -144,7 +144,7 @@ export class App {
     const camp = flow.find((x) => x.type === 'camp');
     const epilogue = flow.find((x) => x.type === 'epilogue');
     if (goto) this.travel(goto.mapId, goto.x, goto.y);
-    if (epilogue) { this.autosave('prologue complete'); showEpilogue(this); return; }
+    if (epilogue) { const act = (epilogue as Extract<Signal, { type: 'epilogue' }>).act; this.autosave(`${act} complete`); showEpilogue(this, act); return; }
     if (combat) { this.startCombat(combat.encounterId); return; }
     if (dialogue) { this.openDialogue(dialogue.treeId); return; }
     if (shop) { openShop(this, shop.shopId); return; }

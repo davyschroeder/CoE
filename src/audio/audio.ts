@@ -94,6 +94,9 @@ const MOODS: Record<string, { scale: number[]; base: number; tempo: number; wave
   boss: { scale: [0, 1, 3, 6, 7, 8], base: 98, tempo: 330, wave: 'sawtooth', drone: 0.1, density: 0.7 },
   combat: { scale: [0, 2, 3, 7, 8, 10], base: 130.81, tempo: 300, wave: 'square', drone: 0.07, density: 0.6 },
   menu: { scale: [0, 2, 3, 7, 10, 12, 14], base: 196, tempo: 800, wave: 'sine', drone: 0.06, density: 0.5 },
+  forest: { scale: [0, 2, 5, 7, 9, 12], base: 174.61, tempo: 700, wave: 'triangle', drone: 0.05, density: 0.45 },
+  city: { scale: [0, 2, 4, 5, 7, 9, 11], base: 246.94, tempo: 380, wave: 'triangle', drone: 0.03, density: 0.6 },
+  ruins: { scale: [0, 1, 4, 5, 7, 8, 11], base: 130.81, tempo: 850, wave: 'sine', drone: 0.08, density: 0.4 },
 };
 
 export function playMusic(mood: string): void {

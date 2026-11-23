@@ -102,5 +102,6 @@ export const ENCOUNTERS: EncounterDef[] = [
 ];
 
 import { CQ_ENCOUNTERS } from './companionQuests';
-ENCOUNTERS.push(...CQ_ENCOUNTERS);
+import { ACT1 } from './act1/index';
+ENCOUNTERS.push(...CQ_ENCOUNTERS, ...ACT1.encounters);
 export const ENCOUNTER_BY_ID: Record<string, EncounterDef> = Object.fromEntries(ENCOUNTERS.map((e) => [e.id, e]));

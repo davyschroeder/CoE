@@ -142,7 +142,8 @@ export const ITEMS: ItemDef[] = [
 ];
 
 import { CQ_ITEMS } from './companionQuests';
-ITEMS.push(...CQ_ITEMS);
+import { ACT1 } from './act1/index';
+ITEMS.push(...CQ_ITEMS, ...ACT1.items);
 export const ITEM_BY_ID: Record<string, ItemDef> = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
 
 export const RARITY_COLORS: Record<Rarity, string> = {

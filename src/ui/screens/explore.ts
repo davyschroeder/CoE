@@ -2,6 +2,7 @@ import type { App, Screen } from '../app';
 import { h, clear, toast, modal, bar, put } from '../dom';
 import type { MapObject } from '../../data/maps/types';
 import { tile } from '../../data/maps/tiles';
+import { QUEST_BY_ID } from '../../data/quests';
 import { ENCOUNTER_BY_ID } from '../../data/encounters';
 import { COMPANION_BY_ID } from '../../data/companions';
 import { CLASS_BY_ID } from '../../data/classes';
@@ -159,8 +160,8 @@ export class ExploreScreen implements Screen {
     const s = this.s;
     const m = getMap(s.location.mapId);
     const inst = instability(s, m.id);
-    const q = s.quests.mq_bell;
-    const obj = q && q.status === 'active' ? (QUEST_OBJ(q.stage)) : '';
+    const mainId = Object.keys(s.quests).reverse().find((id) => s.quests[id].status === 'active' && QUEST_BY_ID[id]?.category === 'main');
+    const obj = mainId ? (mainId === 'mq_bell' ? QUEST_OBJ(s.quests[mainId].stage) : shorten(QUEST_BY_ID[mainId].stages[s.quests[mainId].stage]?.objective ?? '')) : '';
     put(this.topBar, 
       h('div', { class: 'loc' }, m.name),
       h('div', { class: 'clock' }, clockString(s)),
@@ -209,6 +210,7 @@ export class ExploreScreen implements Screen {
       case 'l': openDiceLog(this.app); break;
       case 'f': this.doSearch(); break;
       case 'r': this.doShortRest(); break;
+      case 'k': if (this.canCamp()) openCamp(this.app); else toast('You cannot make camp here.', 'info'); break;
       case ' ': case 'enter': this.interactNearest(); break;
       case 'f5': e.preventDefault(); this.quicksave(); break;
       case 'f9': e.preventDefault(); this.app.load('quick'); break;
@@ -334,7 +336,7 @@ export class ExploreScreen implements Screen {
   private handleEvents(events: StepEvent[]): void {
     for (const e of events) {
       switch (e.type) {
-        case 'exit': this.path = []; this.app.travel(e.obj.to!.map, e.obj.to!.x, e.obj.to!.y); return;
+        case 'exit': this.path = []; if (e.obj.to!.map === 'world') openWorldMap(this.app); else this.app.travel(e.obj.to!.map, e.obj.to!.x, e.obj.to!.y); return;
         case 'trap': toast(`Trap! ${e.victim} takes ${e.damage} damage.`, 'bad'); sfx('hit'); this.renderParty(); break;
         case 'trigger': this.path = []; if (e.obj.dialogue) this.app.openDialogue(e.obj.dialogue); return;
         case 'encounter': this.path = []; this.encounter(e.encounterId); return;
@@ -419,7 +421,7 @@ export class ExploreScreen implements Screen {
       }
       case 'lockedDoor': this.lockMenu(o); break;
       case 'trap': this.trapMenu(o); break;
-      case 'exit': if (o.to) this.app.travel(o.to.map, o.to.x, o.to.y); break;
+      case 'exit': if (o.to?.map === 'world') openWorldMap(this.app); else if (o.to) this.app.travel(o.to.map, o.to.x, o.to.y); break;
     }
     this.refresh();
   }
@@ -494,13 +496,18 @@ export class ExploreScreen implements Screen {
         h('button', { class: 'btn ghost', onclick: close }, 'Cancel'))));
   }
 
+  canCamp(): boolean {
+    const m = getMap(this.s.location.mapId);
+    return this.s.location.mapId === 'inn' || (!!m.camp && evalCond(this.s, m.camp));
+  }
+
   private openMenu(): void {
     modal('Menu', (close) => h('div', { class: 'col' },
       h('button', { class: 'btn', onclick: close }, 'Resume'),
       h('button', { class: 'btn', onclick: () => { close(); openSaveLoad(this.app, 'save'); } }, 'Save Game'),
       h('button', { class: 'btn', onclick: () => { close(); openSaveLoad(this.app, 'load'); } }, 'Load Game'),
       h('button', { class: 'btn', onclick: () => { close(); openSettings(this.app); } }, 'Settings'),
-      this.s.location.mapId === 'inn' ? h('button', { class: 'btn', onclick: () => { close(); openCamp(this.app); } }, 'Camp') : null,
+      this.canCamp() ? h('button', { class: 'btn', onclick: () => { close(); openCamp(this.app); } }, 'Make camp (K)') : null,
       h('button', { class: 'btn ghost', onclick: () => { close(); this.app.showMenu(); } }, 'Quit to Main Menu')));
   }
 
@@ -620,6 +627,10 @@ export function logLine(e: { kind: string; text: string; speaker?: string }): HT
   if (e.kind === 'speech' && e.speaker) return h('div', { class: 'll speech' }, h('b', null, e.speaker + ': '), e.text);
   if (e.kind === 'reaction') return h('div', { class: 'll reaction' }, e.text);
   return h('div', { class: `ll ${e.kind}` }, e.text);
+}
+
+function shorten(t: string): string {
+  return t.length > 90 ? `${t.slice(0, 88)}…` : t;
 }
 
 function QUEST_OBJ(stage: string): string {

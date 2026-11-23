@@ -12,6 +12,8 @@ import { openCharacter } from './character';
 import { openInventory } from './inventory';
 import { openJournal } from './journal';
 import { sfx } from '../../audio/audio';
+import { getMap } from '../../engine/exploration';
+import { chance } from '../../core/rng';
 import { availablePersonalQuests, pendingConflicts } from '../../engine/companionQuests';
 import { openCrafting } from './crafting';
 
@@ -37,7 +39,9 @@ export function openCamp(app: App): void {
         h('button', { class: 'btn small', onclick: () => talkTree(cf.tree) }, 'Step in')));
     }
     root.append(
-      h('p', { class: 'narration' }, s.flags.bell_rang
+      h('p', { class: 'narration' }, s.location.mapId !== 'inn'
+        ? 'A small fire, packs for pillows, someone on watch. Out here, away from towns and their listening walls, people say the things they would not say in the street.'
+        : s.flags.bell_rang
         ? 'Candle-light, the smell of wet wool, the fog at the window. Your companions have gathered in your small room. Here, away from the town, people say the things they would not say in the street.'
         : 'Your rooms above the Lantern & Lamb. Music and laughter through the floorboards. A good place to talk.'),
       h('div', { class: 'camp-grid' }, recruited.map((cs) => {
@@ -68,7 +72,12 @@ export function openCamp(app: App): void {
         h('button', { class: 'btn', onclick: () => { handle.close(); openInventory(app); } }, 'Equipment'),
         h('button', { class: 'btn', onclick: () => { handle.close(); openJournal(app); } }, 'Review quests'),
         h('button', { class: 'btn', onclick: () => { handle.close(); openCrafting(app, () => openCamp(app)); } }, 'Crafting'),
-        s.flags.bell_rang ? h('button', { class: 'btn', onclick: () => { const msg = longRest(s); sfx('heal'); toast(msg, 'good', 5000); render(); } }, 'Long rest (8 hours)') : h('button', { class: 'btn ghost', disabled: true, 'data-tip': 'Too loud to sleep before the midnight vigil.' }, 'Long rest (not now)')));
+        s.flags.bell_rang ? h('button', { class: 'btn', onclick: () => {
+          const m = getMap(s.location.mapId);
+          const re = m.randomEncounters;
+          if (m.campDanger && re && chance(m.campDanger)) { handle.close(); toast('Something finds your camp in the night!', 'bad', 4000); app.startCombat(re.encounters[Math.floor(Math.random() * re.encounters.length)], 'enemy'); return; }
+          const msg = longRest(s); sfx('heal'); toast(msg, 'good', 5000); render();
+        } }, 'Long rest (8 hours)') : h('button', { class: 'btn ghost', disabled: true, 'data-tip': 'Too loud to sleep before the midnight vigil.' }, 'Long rest (not now)')));
   };
   const handle = modal('Camp', root, { wide: true, onClose: () => app.explore?.refresh() });
   render();

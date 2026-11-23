@@ -131,13 +131,15 @@ export const ENEMIES: EnemyTemplate[] = [
     desc: 'The armoured echo of a knight from an erased kingdom, still keeping a vigil no one remembers ordering. Its blade cuts at memory as much as flesh.',
   },
   {
-    id: 'ossaryx', name: 'Ossaryx, the Gloaming Wyrm', type: 'aberration', level: 8, abilities: ab(21, 12, 19, 14, 15, 18), ac: 18, hp: '15d12+60', speed: 8,
+    id: 'ossaryx', name: 'Ossaryx, the Gloaming Wyrm', type: 'aberration', level: 6, abilities: ab(20, 12, 18, 14, 15, 18), ac: 17, hp: '16d12+64', speed: 8,
     actions: ['m_wyrm_bite', 'm_dusk_breath', 'm_frightful_presence'], multiattack: 2, resist: ['necrotic', 'cold'], vuln: ['radiant'], condImmune: ['frightened', 'charmed'],
     xp: 3900, ai: 'brute', resources: { breath: 1, presence: 1 }, recharge: ['breath'], boss: true, glyph: 'O', color: '#3e4a7a',
-    legendary: { per: 3, actions: [{ id: 'lg_tail', cost: 1 }, { id: 'lg_wing', cost: 2 }] },
+    legendary: { per: 2, actions: [{ id: 'lg_tail', cost: 1 }, { id: 'lg_wing', cost: 2 }] },
     loot: [['echo_shard', 1, 6]], gold: '10d10',
     desc: 'The last sovereign of a twilight world, dragged through the Valdros Anchor into blinding day. Legendary: acts at the end of other creatures’ turns (tail sweep, wing buffet). Its Dusk Breath recharges. Vulnerable to radiant light.',
   },
 ];
 
+import { ACT1 } from './act1/index';
+ENEMIES.push(...ACT1.enemies);
 export const ENEMY_BY_ID: Record<string, EnemyTemplate> = Object.fromEntries(ENEMIES.map((e) => [e.id, e]));

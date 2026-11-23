@@ -64,15 +64,22 @@ export function objectsAt(s: GameState, m: MapDef, x: number, y: number): MapObj
   return m.objects.filter((o) => objectCovers(o, x, y) && isObjectPresent(s, m, o));
 }
 
+/** The grid currently in force (reality variants override the base grid). */
+export function activeGrid(s: GameState, m: MapDef): string[] {
+  for (const v of m.variants ?? []) if (safe(s, v.if)) return v.grid;
+  return m.grid;
+}
+
 export function tileAt(s: GameState, m: MapDef, x: number, y: number): string {
   if (y < 0 || y >= m.grid.length || x < 0 || x >= m.grid[0].length) return '#';
+  const grid = activeGrid(s, m);
   const rt = mapRuntime(s, m.id);
   for (const o of m.objects) {
     if (o.kind === 'secretDoor' && o.x === x && o.y === y && rt.revealed.includes(o.id)) return 'D';
   }
   // Barrels destroyed in combat are recorded as removed objects keyed by position.
   if (rt.removed.includes(`tile_${x}_${y}`)) return m.tileset === 'town' ? ',' : '.';
-  return m.grid[y][x];
+  return grid[y][x];
 }
 
 export function isBlockingObject(s: GameState, m: MapDef, o: MapObject): boolean {
@@ -247,7 +254,7 @@ export function stepTo(s: GameState, x: number, y: number): StepEvent[] {
   rt.steps++;
   if (rt.steps % 4 === 0) advanceTime(s, 1);
   for (const o of objectsAt(s, m, x, y)) {
-    if (o.kind === 'exit' && o.to) { events.push({ type: 'exit', obj: o }); return events; }
+    if (o.kind === 'exit' && o.to) { events.push({ type: 'exit', obj: o }); return events; }  // to.map 'world' opens the world map
     if (o.kind === 'trap' && o.trap && !rt.disarmed.includes(o.id)) {
       events.push(triggerTrap(s, m, o));
     }

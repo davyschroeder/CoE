@@ -2,7 +2,7 @@ import type { Cond, DText, Effect } from '../schema';
 import type { Ability, DamageType, Skill } from '../../engine/types';
 
 export type Lighting = 'day' | 'dusk' | 'night' | 'fog' | 'dark';
-export type Tileset = 'town' | 'cathedral' | 'undercroft' | 'vault' | 'interior';
+export type Tileset = 'town' | 'cathedral' | 'undercroft' | 'vault' | 'interior' | 'forest' | 'ruins' | 'dome';
 
 export interface MapObject {
   id: string;
@@ -44,4 +44,10 @@ export interface MapDef {
   randomEncounters?: { if?: Cond; chance: number; encounters: string[]; max: number };
   hub?: string;
   restAllowed?: Cond;
+  /** Alternate grids (same size) used while a condition holds — e.g. Valdros flickering between realities. */
+  variants?: { if: Cond; grid: string[] }[];
+  /** Where the party may make camp (talks, crafting, long rest). Wilderness camps can be interrupted. */
+  camp?: Cond;
+  /** Chance (0..1) that a long rest here is interrupted by one of the map's random encounters. */
+  campDanger?: number;
 }

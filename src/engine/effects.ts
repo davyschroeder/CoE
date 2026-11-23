@@ -19,7 +19,7 @@ export type Signal =
   | { type: 'dialogue'; treeId: string }
   | { type: 'goto'; mapId: string; x: number; y: number }
   | { type: 'shop'; shopId: string }
-  | { type: 'epilogue' }
+  | { type: 'epilogue'; act: string }
   | { type: 'levelup'; names: string[] }
   | { type: 'reactions'; reactions: Reaction[] }
   | { type: 'notify'; text: string }
@@ -164,7 +164,7 @@ function applyEffect(s: GameState, e: string, out: Signal[], context: string): v
     case 'leave': companionLeaves(s, args[0]); break;
     case 'hub': if (!s.discoveredHubs.includes(args[0])) s.discoveredHubs.push(args[0]); break;
     case 'chapter': s.chapter = args[0] as GameState['chapter']; break;
-    case 'epilogue': out.push({ type: 'epilogue' }); break;
+    case 'epilogue': out.push({ type: 'epilogue', act: args[0] ?? 'prologue' }); break;
     case 'shop': out.push({ type: 'shop', shopId: args[0] }); break;
     case 'camp': out.push({ type: 'camp' }); break;
     case 'clock': {
