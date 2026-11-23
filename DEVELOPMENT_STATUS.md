@@ -1,0 +1,92 @@
+# Development Status
+
+_Last updated: build v0.1 (Phase 1 + Phase 2 complete)._
+
+This file is the source of truth for **what actually works**. Anything not listed as implemented is not in the game yet.
+
+## Summary
+
+| Area | Status |
+|---|---|
+| Project, build, tests | ✅ Vite + TypeScript (strict) + Vitest; `npm test` runs 37 tests incl. an end-to-end prologue playthrough |
+| Prologue "The Bell That Never Rang" | ✅ Fully playable start to finish; ends by unlocking Act I (chapter flag + epilogue summary) |
+| Acts I–VI | ❌ Designed in `STORY_BIBLE.md` only. World map shows their regions as locked |
+
+## Implemented features
+
+**Core & rules**
+- Dice engine (d4–d100, expressions, advantage/disadvantage, criticals), crypto RNG, seedable for tests.
+- Ability scores/modifiers, proficiency, 18 skills, expertise, Jack of All Trades, saves, contests, passive Perception, death saves with nat 1/20 rules; nat 20/1 not automatic on checks.
+- 8 ancestries, 8 backgrounds, **10 classes** with 2 specialisations each, levels 1–20 (HP, proficiency, slots, ASIs/feats, fighting styles, new spells; key features listed in `GAME_DESIGN.md`), 8 feats.
+- 35 spells (cantrips to 3rd level) plus ~48 class features, basic actions and monster abilities, concentration, upcasting, pact magic, prepared vs known casters.
+- ~75 items with real effects (weapons, armour, shields, cloaks, amulets, rings, potions, scrolls, tools, materials, quest items, several magic items).
+
+**Characters & party**
+- Character creation wizard (identity/portrait, ancestry, class, background, point buy / standard array / 4d6 roll, skills & expertise, spells, personality & motivation, choose exactly 3 of 10 companions, difficulty & optional rules).
+- 10 companions with values, hard limits, personality and combat dials, bios, secrets (hidden), voices (reactions, suggestions, combat barks, idle remarks, refusals, votes, farewells), 59 banters, 10 camp conversations (264 nodes).
+- Companion mind: multi-dimensional relationship (trust/respect/affection/agreement/fear), bonds, memories, mood, stress; reactions to tagged choices; opinions & arguments at decisions; party votes; objections to hard-limit violations; companions **can leave**.
+- Level-up UI with subclass/ASI/feat/style/spell choices (companions pre-choose; player can override).
+
+**Dungeon Master & content**
+- Condition + effect languages, dialogue engine (conditional text, interjections, skill checks with roller choice, success/failure branches, locked options with reasons, once-only options, decision nodes, vote).
+- 55 dialogue trees in total (prologue main 23, prologue side 22, camp 10).
+- 5 maps (Hollowmere festival/fog states, the Lantern & Lamb, the Cathedral, the Undercroft, the Anchor Vault), all reachability-checked.
+- 5 quests: main quest (8 stages, 8 clues, 3 outcomes) + Trouble at the Lantern & Lamb (5 outcomes), Lost in the Fog (3 rescues, each solvable by fight or by skill/resonance), The Girl Nobody Remembers (3 outcomes incl. a hidden long-term consequence for Sister Maren), The Scholar's Dig (4 outcomes).
+- 12 encounters, 12 enemy types incl. 2 bosses with mechanics (Bellwarden: pillars, phases, toll, summons; Seeker Ysolt), Echo Sentinel (recharging beam), echo-touched variants from instability.
+- Multiple approaches everywhere: e.g. three routes into the undercroft, four ways to open the vault, five ways to deal with the Seeker.
+
+**Exploration**
+- Canvas tile renderer, fog of war with LOS, lighting by map state, party followers, click-to-move pathfinding, keyboard movement, zoom.
+- Passive and active searching, secret doors, hidden caches, traps (detect/disarm/avoid/trigger), locks (key/pick/force), triggers, encounter zones, random encounters, stealth approach (ambush or sneak past), reality instability fragments, Aether Resonance glimpses, world map fast travel, time of day.
+- Short/long rest, camp (talks, party swap, prepare spells, equipment), shops (3 merchants, discounts from story choices and reputation).
+
+**Combat**
+- Initiative, action economy, movement with difficult terrain, opportunity attacks, Extra Attack/multiattack, all listed conditions with effects, cover, high ground, AoE templates with friendly fire, reactions, concentration, death saves, revive, items in combat, explosive barrels & burning ground, pits & shoving, boss phases, flee where allowed, nonlethal brawls.
+- Utility AI for companions and enemies; party orders; difficulty scaling.
+- UI: initiative timeline, party panel with conditions & death saves, action bar grouped by action/bonus/spells/items with tooltips, spell slots & upcasting, movement preview with opportunity-attack warning, target highlights, AoE preview, hit chance with advantage reasons, combat log, floating numbers, barks, CPU speed setting.
+
+**Saving & settings**
+- 6 manual slots, quicksave (F5/F9), autosaves; versioned + checksummed + validated + migratable save format; backup & auto-recovery; export/import to file.
+- Settings: CPU speed, manual dice, dice detail, hide enemy HP, auto-end turns, companion chatter, text speed, font size, language (UI), music & effects volume, in-game difficulty change.
+
+**Presentation**: procedural portraits, tiles, lighting, animated menu, procedural music per mood + SFX, fullscreen, tooltips, responsive down to ~900px wide.
+
+## Tests (`npm test`)
+
+| Suite | What it covers |
+|---|---|
+| `dice.test.ts` | parsing, bounds for every die, crit doubling, adv/dis, uniformity |
+| `rules.test.ts` | modifiers, proficiency, XP levels, check maths, nat-20 rule, auto-fail saves, disadvantage, death saves, AC, resistances/vulnerability/immunity/temp HP, **every class 1→20** |
+| `content.test.ts` | every dialogue node/option/condition/effect/speaker/tag; companion voices & banter; map objects on valid tiles; exits land on walkable tiles; encounters/enemies/items/spells/shops cross-references |
+| `combat.test.ts` | initiative, action economy, illegal actions rejected, **every encounter × several seeds runs to completion with zero illegal AI actions**, all companions fight, Bellwarden win-rate floor, Action Surge regression |
+| `save.test.ts` | round-trip, checksum corruption, validation, backup recovery, migrations |
+| `state.test.ts` | quest monotonicity, no duplicate rewards, condition language, companion reactions/limits/leaving, opinions & votes, dialogue → state → reactions |
+| `prologue.e2e.test.ts` | **plays the entire prologue** through the engine (dialogues, checks, 8+ fights with AI, travel, looting, resonance, boss, finale) and verifies save/load preserves all consequences |
+
+Manual checks done in Chromium (Playwright): main menu, character creation (rogue, cleric, fighter), opening scene, exploration & movement, NPC dialogue with skill check roll card, all HUD panels, a full fog-hound combat (player casting + companion AI), camp & a companion conversation, the Bellwarden arena. No console errors.
+
+## Known limitations / honest notes
+
+- **Only the prologue is content-complete.** After the epilogue you can keep wandering Hollowmere, but Act I is not built.
+- Some class features beyond level 5 are progression-only (HP/slots/ASIs) without their full feature text implemented; level cap in the prologue is ~3–4.
+- Spell list stops at 3rd level and lacks many classic utility spells; summons and terrain-altering spells are not implemented.
+- Defensive reactions are automatic (no player prompt).
+- Faction reputation is tracked and affects Hollowmere prices, but faction questlines/tiers are not yet implemented.
+- Companion personal quests are hooks/foreshadowing only (camp talks); multi-stage companion quests start in Act I.
+- Romance is limited to optional hints in camp talks.
+- Combat arenas use the exploration map; very large maps may produce wide arenas.
+- Audio is procedural and simple; there are no recorded music/voice assets.
+- Dutch localisation covers only the main UI strings; all narrative text is English.
+- JS bundle ~800 kB (not code-split yet).
+
+## Next development priority
+
+1. Phase 3 systems: specialisation features to level 10, more spells (2nd–5th), crafting, faction tiers, player-prompted reactions, code splitting.
+2. Act I content (see `ROADMAP.md`), starting with Hollowmere aftermath and the Whispering Woods, carrying over all prologue flags.
+
+## Continuity notes for future sessions
+
+- Content ids are stable: flags such as `bell_rang`, `lira_fate`, `maren_forgets`, `corvin_fate`, `ysolt_outcome`, `hawks_help`, `rescued_count`, `halric_named`, `heart_touched`, `prologue_complete` are referenced by later-act design and saves — do not rename.
+- Add new content in `src/data/**` and run `npm test`: the content test catches broken references.
+- Map grids are generated by a small script (kept out of the repo); edit `src/data/maps/grids.ts` directly or regenerate, then re-run the map tests.
+- When adding mechanics, add them to `combat.ts`/`character.ts` and expose through `canUse`/`perform` so the AI stays rule-bound; re-run the balance simulation pattern from `tests/sim.ts`.
