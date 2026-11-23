@@ -11,7 +11,9 @@ export default defineConfig({
       output: {
         // Narrative content is large and changes often: keep it in its own chunks, separate from the engine.
         manualChunks(id: string) {
-          if (id.includes('/src/data/dialogue/') || id.includes('/src/data/companionQuests')) return 'content-dialogue';
+          if (id.includes('/src/data/dialogue/prologue')) return 'content-prologue';
+          if (id.includes('/src/data/companionQuests')) return 'content-companion-quests';
+          if (id.includes('/src/data/dialogue/')) return 'content-companions';
           if (id.includes('/src/data/')) return 'content-data';
           if (id.includes('/src/ui/')) return 'ui';
           return undefined;

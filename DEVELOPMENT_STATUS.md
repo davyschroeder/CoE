@@ -62,6 +62,8 @@ This file is the source of truth for **what actually works**. Anything not liste
 | `combat.test.ts` | initiative, action economy, illegal actions rejected, **every encounter × several seeds runs to completion with zero illegal AI actions**, all companions fight, Bellwarden win-rate floor, Action Surge regression |
 | `save.test.ts` | round-trip, checksum corruption, validation, backup recovery, migrations |
 | `state.test.ts` | quest monotonicity, no duplicate rewards, condition language, companion reactions/limits/leaving, opinions & votes, dialogue → state → reactions |
+| `phase3.test.ts` | auras, Indomitable, Land's Stride, Expertise II, Magical Secrets, Spirit Guardians, Death Ward, ends-on-damage, elites, legendary actions, Ossaryx & new enemies fight legally, crafting, scroll copying, faction tiers & trade refusal, reaction preferences, save v1→v2 migration, AI picks auras |
+| `companionQuests.test.ts` | **every companion quest** becomes available at camp and is completed through its own map objects (dialogue and fights); every conflict appears and resolves |
 | `prologue.e2e.test.ts` | **plays the entire prologue** through the engine (dialogues, checks, 8+ fights with AI, travel, looting, resonance, boss, finale) and verifies save/load preserves all consequences |
 
 Manual checks done in Chromium (Playwright): main menu, character creation (rogue, cleric, fighter), opening scene, exploration & movement, NPC dialogue with skill check roll card, all HUD panels, a full fog-hound combat (player casting + companion AI), camp & a companion conversation, the Bellwarden arena. No console errors.
@@ -74,7 +76,21 @@ Manual checks done in Chromium (Playwright): main menu, character creation (rogu
 - **Crafting** at camp (10 recipes, 3 new crafted magic items) and **scroll copying** for wizards.
 - **Factions** tab in the journal (5 factions + Hollowmere, tiers Hostile→Allied), faction-aligned merchant prices, hostile merchants refuse to trade, `reptier:` conditions.
 - **Reaction preferences** for your character (Party screen); save format **v2** with automatic migration from v1.
-- **Companion quests & conflicts:** see the section below.
+- **Companion personal quests (stage 1, all ten companions)** in `src/data/companionQuests.ts`: each starts from camp (✦ A personal matter…) when that companion travels with you and their condition holds (trust and/or camp-talk hints; most after the prologue, Orren's, Korr's and Tessa's already during the fog night). 2–3 stages each, set in the existing maps, with tagged decisions, skill checks whose failure changes the outcome, relationship changes, memories, rewards (10 new items) and outcome flags for Act I (e.g. `cq_kael_outcome`, `vaelis_severin_hint`, `hollowmere_interdict`). 4 optional non-lethal fights; there is always a non-combat route.
+  | Quest | Companion | Outcomes |
+  |---|---|---|
+  | A Letter With No Seal | Kael | honest / lied / empty (+ the courier's fate) |
+  | What the Roots Remember | Orren | hidden / shared / tested |
+  | The Voice in the Grey | Korr | sung / fought / silent |
+  | Steadfast | Brakka | wrote / carried / kept / lost |
+  | An Instrument of His Own Design | Vaelis | burned / kept / turned / pinged |
+  | Sealed Orders | Seris | condemned / warded / questioned / spared |
+  | The Voice in the Crackle | Nima | spoke / contained / flared / refused |
+  | What the Water Gave Back | Ilyra | stayed / sought / vigil |
+  | What the Choir Asks | Varek | bargained / refused / halric |
+  | The Bell's Lost Verse | Tessa | sung / torn / half / unsung |
+- **Companion conflicts (5):** Seris–Varek, Vaelis–Seris, Kael–Seris, Nima–Vaelis, Brakka–Korr. Shown at camp when both are in the party; side with one, the other, or try to reconcile them (Persuasion/Insight DC 14–15). Bonds and trust shift; one side choice in each costs a companion heavily.
+- Fix: a party that re-entered the vault after the prologue had no exit (the original exit disappears once the Heart is touched); a return exit now appears.
 - **Bundle split** into engine/UI, data and dialogue chunks (no chunk-size warning).
 - Fixed along the way: CPU actions are re-validated after moving (a boss stunned mid-move by a phase change could otherwise act); bosses' scripted abilities check legality.
 
