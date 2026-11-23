@@ -23,6 +23,7 @@ import { savingThrow, skillCheck, deathSave, contest, type CheckResult, type Bon
 import { applyDamage, heal } from '../damage';
 import { activeParty, addLog, recordRoll, mapRuntime } from '../state';
 import { instability } from '../exploration';
+import { evalCond } from '../conditions';
 import { chance, random } from '../../core/rng';
 import { ABILITY_NAMES } from '../../rules/abilities';
 
@@ -142,7 +143,9 @@ export class Combat {
     for (let y = this.bounds.y0; y <= this.bounds.y1; y++) for (let x = this.bounds.x0; x <= this.bounds.x1; x++) {
       if (tileAt(s, this.map, x, y) === 'b') this.objects.push({ id: `tile_${x}_${y}`, kind: 'barrel', name: 'Barrel of Lamp Oil', x, y, hp: 4, maxHp: 4, ac: 10, destroyed: false });
     }
-    this.rollInitiative(opts.ambush);
+    // Story-driven surprise: e.g. a trap the party saw coming and turned on its springers.
+    const ambush = opts.ambush ?? (enc.surpriseIf && evalCond(s, enc.surpriseIf) ? 'party' : undefined);
+    this.rollInitiative(ambush);
     this.log(enc.intro, 'info');
     this.startTurn();
   }

@@ -166,3 +166,17 @@ Reactions stay automatic (combat resolution is synchronous and must stay determi
 
 ### Companion personal quests and conflicts
 Each companion has a first personal quest (`cq_<id>`, category *companion*). When the companion travels with you and their conditions are met (trust, story progress), a **✦ A personal matter…** button appears at camp. When two companions who clash are both in the party, camp shows their argument and you can step in; your mediation changes their bond and their trust in you. Content lives in `src/data/companionQuests.ts` and is merged into the quest, dialogue, map, encounter and item registries.
+
+## 11. Act I systems (v0.3)
+
+### Content modules
+Each Act I region is a `ContentModule` (`src/data/act1/module.ts`): quests, dialogues, map objects, encounters, enemies, items, NPCs, shops, road events and arrival texts. `src/data/act1/index.ts` merges them into the global registries, so the engine has no act-specific code. The writers' contract — ids, cross-file flags, map coordinates — is `docs/ACT1_SPEC.md`.
+
+### Travel and the wild
+The world map (`M`) lists discovered regions. Travel advances the clock by the route's hours; journeys of three hours or more have a 40% chance of a road event, picked by weight from those whose condition holds, each at most once. Some road events are fights (the party is ambushed). Outside towns you can make camp (`K`); each map sets a camp-danger chance that a camp is interrupted by an encounter.
+
+### Realities
+A map can declare grid variants keyed on a flag (`variants`); `activeGrid()` picks the one that matches. Valdros has four (ruin, flooded, burning, inhabited). Objects carry conditions, so each reality has its own inhabitants, dangers and exits — every reality opens exactly one way into the Senate Dome. Shifting costs Resonance, risks damage on a failed Arcana check, or is free with a companion who understands the city.
+
+### Milestones and story surprise
+Quest stages may award milestone XP (`stages.<id>.xp`), granted once because stages only move forward; Act I's main quest uses this to keep the party at the designed level (4 → 5 → 6) without grinding. Encounters may set `surpriseIf`: when the condition holds, the enemy side starts surprised — used when the party turns the Conclave's ambush on its springers.

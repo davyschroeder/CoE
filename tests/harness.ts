@@ -20,6 +20,8 @@ export class Harness {
   log: string[] = [];
   fights: Record<string, string> = {};
   epilogue = false;
+  /** Preferences for dialogues opened without explicit ones (chained from fights or `dialogue` effects). */
+  auto: Record<string, Pref[]> = {};
   constructor(public s: GameState) {}
 
   lucky() { setRandomSource(() => 0.93); } // d20 rolls 19 for dialogue checks
@@ -28,6 +30,7 @@ export class Harness {
   talk(treeId: string, prefs: Pref[] = [], maxSteps = 60): void {
     const tree = DIALOGUE_BY_ID[treeId];
     expect(tree, `tree ${treeId}`).toBeTruthy();
+    if (!prefs.length && this.auto[treeId]) prefs = this.auto[treeId];
     this.lucky();
     const session = new DialogueSession(this.s, tree);
     let signals: Signal[] = session.takeEnteredSignals();

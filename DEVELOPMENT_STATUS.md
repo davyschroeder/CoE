@@ -1,6 +1,6 @@
 # Development Status
 
-_Last updated: build v0.2 (Phases 1–3 complete)._
+_Last updated: build v0.3 (Phases 1–4 complete: Prologue and Act I)._
 
 This file is the source of truth for **what actually works**. Anything not listed as implemented is not in the game yet.
 
@@ -11,7 +11,8 @@ This file is the source of truth for **what actually works**. Anything not liste
 | Project, build, tests | ✅ Vite + TypeScript (strict) + Vitest; `npm test` runs the full suite incl. an end-to-end prologue playthrough |
 | Phase 3 systems | ✅ Class features 6–10, 22 new spells (levels 2–5), legendary/elite/recharge monsters + loot, crafting, factions, reaction preferences, companion quests & conflicts, code splitting — see `GAME_DESIGN.md` §10 |
 | Prologue "The Bell That Never Rang" | ✅ Fully playable start to finish; ends by unlocking Act I (chapter flag + epilogue summary) |
-| Acts I–VI | ❌ Designed in `STORY_BIBLE.md` only. World map shows their regions as locked |
+| Act I "Whispers of the Veil" | ✅ Fully playable from the morning after the prologue to the Act I epilogue: Hollowmere, the Whispering Woods, Ashenford, Valdros (4 realities), the Senate Dome; all ten companions recruitable — see below |
+| Acts II–VI | ❌ Designed in `STORY_BIBLE.md` only. World map shows their regions as locked |
 
 ## Implemented features
 
@@ -30,7 +31,7 @@ This file is the source of truth for **what actually works**. Anything not liste
 
 **Dungeon Master & content**
 - Condition + effect languages, dialogue engine (conditional text, interjections, skill checks with roller choice, success/failure branches, locked options with reasons, once-only options, decision nodes, vote).
-- 55 dialogue trees in total (prologue main 23, prologue side 22, camp 10).
+- 55 prologue-era dialogue trees (prologue main 23, prologue side 22, camp 10), plus the companion-quest trees (Phase 3) and 71 Act I trees (see below).
 - 5 maps (Hollowmere festival/fog states, the Lantern & Lamb, the Cathedral, the Undercroft, the Anchor Vault), all reachability-checked.
 - 5 quests: main quest (8 stages, 8 clues, 3 outcomes) + Trouble at the Lantern & Lamb (5 outcomes), Lost in the Fog (3 rescues, each solvable by fight or by skill/resonance), The Girl Nobody Remembers (3 outcomes incl. a hidden long-term consequence for Sister Maren), The Scholar's Dig (4 outcomes).
 - 12 encounters, 12 enemy types incl. 2 bosses with mechanics (Bellwarden: pillars, phases, toll, summons; Seeker Ysolt), Echo Sentinel (recharging beam), echo-touched variants from instability.
@@ -64,9 +65,12 @@ This file is the source of truth for **what actually works**. Anything not liste
 | `state.test.ts` | quest monotonicity, no duplicate rewards, condition language, companion reactions/limits/leaving, opinions & votes, dialogue → state → reactions |
 | `phase3.test.ts` | auras, Indomitable, Land's Stride, Expertise II, Magical Secrets, Spirit Guardians, Death Ward, ends-on-damage, elites, legendary actions, Ossaryx & new enemies fight legally, crafting, scroll copying, faction tiers & trade refusal, reaction preferences, save v1→v2 migration, AI picks auras |
 | `companionQuests.test.ts` | **every companion quest** becomes available at camp and is completed through its own map objects (dialogue and fights); every conflict appears and resolves |
+| `act1_engine.test.ts` | Valdros realities (grid swap, exactly one Dome route per reality, none in the ruin), travel time and road events, reachability of every Act I point of interest, milestone XP once per stage, `surpriseIf`, walkable arrival points, Pell's scene for every Lira outcome |
+| `act1_woods.test.ts` / `act1_ashenford.test.ts` / `act1_valdros.test.ts` | every Act I quest and outcome played through its own dialogues and fights: Greenmother (calm or angered), the three Thornwake outcomes, Red Cord, Orren & Korr; Wren House ×4, mob ×3, glassworks ×3, safe house ×3, the five ambush-warning routes, all six Ashenford recruitments; aftermath, Seris, Vaelis, realities and their inhabitants, betrayal (or `maren_forgets`), ambush led by Ysolt or Vex, turned or parleyed, Ossaryx slain or sent home, Severin refused/listened/tempted, epilogue exclusivity |
+| `act1.e2e.test.ts` | **continues the real prologue playthrough through all of Act I** (Hollowmere → Woods → Ashenford → Valdros → Dome → Ossaryx → Severin → epilogue → chapter `act2`) on earned XP only, asserts the designed level curve (4 → 5 → 6) and save/load |
 | `prologue.e2e.test.ts` | **plays the entire prologue** through the engine (dialogues, checks, 8+ fights with AI, travel, looting, resonance, boss, finale) and verifies save/load preserves all consequences |
 
-Manual checks done in Chromium (Playwright): main menu, character creation (rogue, cleric, fighter), opening scene, exploration & movement, NPC dialogue with skill check roll card, all HUD panels, a full fog-hound combat (player casting + companion AI), camp & a companion conversation, the Bellwarden arena. No console errors.
+Manual checks done in Chromium (Playwright): Act I — the morning-after scene and council, the world map with Act I regions, Valdros arrival and a reality shift (flooded grid), the Senate Dome, the turned ambush (enemies surprised) and the Ossaryx arena, the Act I epilogue screen; earlier: main menu, character creation (rogue, cleric, fighter), opening scene, exploration & movement, NPC dialogue with skill check roll card, all HUD panels, a full fog-hound combat (player casting + companion AI), camp & a companion conversation, the Bellwarden arena. No console errors.
 
 ## Phase 3 additions (v0.2)
 
@@ -94,14 +98,30 @@ Manual checks done in Chromium (Playwright): main menu, character creation (rogu
 - **Bundle split** into engine/UI, data and dialogue chunks (no chunk-size warning).
 - Fixed along the way: CPU actions are re-validated after moving (a boss stunned mid-move by a phase change could otherwise act); bosses' scripted abilities check legality.
 
+## Act I additions (v0.3)
+
+Content lives in `src/data/act1/` (one `ContentModule` per region, merged into the global registries; contract in `docs/ACT1_SPEC.md`). Roughly 60,000 words of dialogue: 7 quests, 71 dialogue trees, 39 new NPCs, 9 new enemy templates, 17 encounters, 14 items, 3 shops, 7 road events and 48 epilogue lines.
+
+- **Hollowmere, the morning after** (`valdros.ts`, `hollowmere.ts`): the council under the Lantern Tree, Captain Hale and Corvin's fate (handed over → you can get him released; freed/ally → he left word; killed → the truth or a lie), Sister Maren's half-true request, **Seris** recruitable; small scenes for Lira's fate (Pell), the Grey Hawks (`hawks_help`) and Brother Halric's name.
+- **World map & travel**: travel takes hours; 40% chance of a weighted, once-only road event on longer journeys (refugees, Dawnblade pilgrims, Conclave riders, Ysolt on the road, a procession of the forgotten…). Wilderness camping (`K`) with interruption risk per map.
+- **The Whispering Woods** (`woods.ts`): the Greenmother and the Verdant outpost, the Old Path (also reachable if you anger her), Caddoc Briar's Thornwake and the failing Whispering Stone (helped / stopped / bargained; broken / mended / left), the woodcutters' Red Cord, **Orren** and **Korr**.
+- **Ashenford** (`ashenford.ts`): the Wren House (saved / lost / deal), the Dawnblade mob (dispersed / fought / bought), the Emberglass glassworks and Nima's father (reconciled / estranged / absent), the Unbound safe house (allied / visited / betrayed), garrison, Conclave office, hospice, chapel, inn, docks, two merchants; **Kael, Nima, Varek, Tessa, Ilyra, Brakka**. Five ways to learn of the ambush at Valdros.
+- **Valdros** (`valdros.ts`): four realities with their own map grids (ruin / flooded / burning / inhabited), shifted at flickers for Resonance, an Arcana check that can hurt, or free with Vaelis; each reality opens exactly one way into the Senate Dome and has its own inhabitant; **Vaelis**; a hidden Conclave scout.
+- **The Senate Dome**: Maren's betrayal (or, if `maren_forgets`, a horrified guide); the Conclave ambush led by Ysolt (if she fought/escaped) or High Seeker Vex — if you were warned, spotted them or caught the scout you can strike first (enemies surprised) or talk them into withdrawing; Maren spared / turned / killed; **Ossaryx** (fight, or the hidden path of sending it home: Resonance + understanding + two hard checks); Archon Severin's projection (refused / listened / tempted); the Act I epilogue and `chapter act2`.
+- **Engine**: milestone XP on quest stages (`stages.<id>.xp`, granted once); `EncounterDef.surpriseIf` (story-driven surprise); a short-rest beat between the Dome's two fights; `shortRest` over-healing fixed (hit-die healing was accumulated twice); the map generator is now in the repo (`tools/mapgen.py`, with walkability and reachability checks); Act I content split into per-region chunks.
+- **Balance** (AI-vs-AI simulation, level 6, Adventurer): the ambush is won 95–100% of the time; Ossaryx after the ambush and the short rest about 72% on average over 10 party/class combinations (best 11–12/12; an all-caster party without a frontline, e.g. Vaelis/Nima/Kael with a wizard, only ~2/12). The main path awards enough XP for level 4 at the start, 5 after the Woods, 6 at the Dome.
+
 ## Known limitations / honest notes
 
-- **Only the prologue is content-complete.** After the epilogue you can keep wandering Hollowmere, but Act I is not built.
+- **The Prologue and Act I are content-complete; Acts II–VI are not built.** After the Act I epilogue you can keep exploring the Act I regions; Act II regions on the world map stay locked.
+- Ossaryx is hard for parties without a frontline or healer (see Balance above); Story difficulty helps. Balance numbers come from AI-controlled parties, not human play-testing.
+- Act I playtesting has been automated (every quest outcome, a full end-to-end run) plus a browser smoke test of key scenes; a complete manual playthrough by a human has not been done.
+- Some prologue consequences are only light reactivity in Act I (Pell, the Grey Hawks, Halric's chalked name); bigger callbacks are planned for later acts.
 - Class features beyond level 10 are progression-only (HP/slots/ASIs/extra attacks); the prologue party reaches level ~3–4, so most Phase 3 features are exercised by tests and will matter from Act I on.
 - Spells stop at 5th level; summons and terrain-altering spells are not implemented.
 - Reactions are not prompted interactively; your character follows the reaction preferences you set.
-- Faction tiers affect prices and conditions; faction questlines begin in Act I. The new Act I monsters (incl. Ossaryx) are not yet placed in story encounters.
-- Companion personal quests are hooks/foreshadowing only (camp talks); multi-stage companion quests start in Act I.
+- Faction tiers affect prices and conditions; Act I contains faction-relevant choices (Verdant Circle, Unbound, Covenant, Last Dawn, Conclave), but full faction questlines start in Act II.
+- Companion personal quests have one chapter each (Phase 3); their outcomes colour Act I scenes and the epilogue, follow-up chapters are for later acts.
 - Romance is limited to optional hints in camp talks.
 - Combat arenas use the exploration map; very large maps may produce wide arenas.
 - Audio is procedural and simple; there are no recorded music/voice assets.
@@ -109,11 +129,12 @@ Manual checks done in Chromium (Playwright): main menu, character creation (rogu
 
 ## Next development priority
 
-1. Act I content (Phase 4) (see `ROADMAP.md`), starting with Hollowmere aftermath and the Whispering Woods, carrying over all prologue flags.
+1. Act II "Kingdoms of Ash" (Phase 5, see `ROADMAP.md` and `STORY_BIBLE.md` §9): Solmara, the Iron Mountains, the Ember Wastes, the Fortress of the Fallen King — reusing the Act I pipeline (spec → per-region content modules → per-region tests → end-to-end test continuing from the Act I run).
+2. A human playthrough of Act I to tune pacing and Ossaryx for frontline-less parties.
 
 ## Continuity notes for future sessions
 
 - Content ids are stable: flags such as `bell_rang`, `lira_fate`, `maren_forgets`, `corvin_fate`, `ysolt_outcome`, `hawks_help`, `rescued_count`, `halric_named`, `heart_touched`, `prologue_complete` are referenced by later-act design and saves — do not rename.
 - Add new content in `src/data/**` and run `npm test`: the content test catches broken references.
-- Map grids are generated by a small script (kept out of the repo); edit `src/data/maps/grids.ts` directly or regenerate, then re-run the map tests.
+- Map grids are generated by `tools/mapgen.py` (`python3 tools/mapgen.py src/data/maps/grids.ts`), which also exports `POIS` and fails if a point of interest is blocked or unreachable. Act I flags (`a1_*`, `valdros_reality`, `ossaryx_fate`, …) are listed in `docs/ACT1_SPEC.md` and are part of the save contract — do not rename.
 - When adding mechanics, add them to `combat.ts`/`character.ts` and expose through `canUse`/`perform` so the AI stays rule-bound; re-run the balance simulation pattern from `tests/sim.ts`.

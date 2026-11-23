@@ -57,3 +57,51 @@ describe('Act I engine: travel', () => {
     }
   });
 });
+
+describe('Act I engine: milestones, story surprise, arrival', () => {
+  it('main-quest stages grant their milestone XP exactly once', async () => {
+    const { applyEffects } = await import('../src/engine/effects');
+    const s = makeGame();
+    const xp0 = s.party[0].xp;
+    applyEffects(s, ['quest a1_main aftermath']);
+    expect(s.party[0].xp).toBe(xp0 + 1000);
+    applyEffects(s, ['quest a1_main woods', 'quest a1_main old_path']);
+    expect(s.party[0].xp).toBe(xp0 + 3500);
+    applyEffects(s, ['quest a1_main old_path', 'quest a1_main woods']); // repeats and regressions grant nothing
+    expect(s.party[0].xp).toBe(xp0 + 3500);
+  });
+
+  it('surpriseIf surprises the enemy side when its condition holds', async () => {
+    const { Combat } = await import('../src/engine/combat/combat');
+    const s = makeGame();
+    s.location = { mapId: 'valdros_dome', x: 16, y: 16 };
+    const surprised = (cb: InstanceType<typeof Combat>) => cb.combatants.filter((c) => c.char.conditions.some((k) => k.id === 'surprised')).map((c) => c.side);
+    expect(surprised(new Combat(s, 'a1v_enc_turned_ysolt'))).toEqual([]);
+    s.flags.a1v_ambush_turned = true;
+    const sides = surprised(new Combat(s, 'a1v_enc_turned_ysolt'));
+    expect(sides.length).toBeGreaterThan(0);
+    expect(sides.every((x) => x === 'enemy')).toBe(true);
+  });
+
+  it('the world-map arrival point of every Act I map is walkable', () => {
+    const s = makeGame();
+    for (const [map, x, y] of [['woods', 1, 20], ['ashenford', 27, 1], ['valdros', 23, 37]] as const) {
+      expect(isPassable(s, getMap(map), x, y), map).toBe(true);
+    }
+  });
+});
+
+describe('Act I: Hollowmere remembers the prologue', () => {
+  it('Pell\'s scene follows every Lira outcome', async () => {
+    const { Harness, txt } = await import('./harness');
+    for (const [fate, pick, flag] of [['anchored', 'Look after her', 'a1h_pell_seen'], ['bottled', 'find one', 'a1h_promised_pell'], ['faded', 'proud of you', 'a1h_pell_seen']] as const) {
+      const s = makeGame(['vaelis', 'ilyra', 'nima']);
+      Object.assign(s.flags, { prologue_complete: true, lira_fate: fate });
+      s.chapter = 'act1';
+      const H = new Harness(s);
+      H.talk('a1h_pell', [txt(pick)]);
+      expect(s.flags[flag], fate).toBe(true);
+      expect(H.log[0], fate).toContain(`a1h_pell.${fate}`);
+    }
+  });
+});

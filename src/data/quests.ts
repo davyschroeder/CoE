@@ -4,7 +4,8 @@ export interface QuestDef {
   category: 'main' | 'side' | 'companion' | 'faction';
   giver: string;
   summary: string;
-  stages: Record<string, { objective: string; journal: string }>;
+  /** `xp`: milestone experience granted (once) when the quest reaches that stage. */
+  stages: Record<string, { objective: string; journal: string; xp?: number }>;
   clues?: Record<string, string>;
   outcomes?: Record<string, string>;
   xp?: number;

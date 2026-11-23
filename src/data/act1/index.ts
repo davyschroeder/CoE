@@ -2,8 +2,9 @@ import type { ContentModule, TravelEvent } from './module';
 import { WOODS } from './woods';
 import { ASHENFORD } from './ashenford';
 import { VALDROS } from './valdros';
+import { HOLLOWMERE_A1 } from './hollowmere';
 
-export const ACT1_MODULES: ContentModule[] = [WOODS, ASHENFORD, VALDROS];
+export const ACT1_MODULES: ContentModule[] = [WOODS, ASHENFORD, VALDROS, HOLLOWMERE_A1];
 
 export const ACT1 = {
   quests: ACT1_MODULES.flatMap((m) => m.quests ?? []),

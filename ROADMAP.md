@@ -25,9 +25,21 @@ Hollowmere (festival and fog), the inn, the Cathedral of Saint Orlen, the underc
 - [ ] Multiclassing (optional)
 - [ ] Interactive reaction prompts (current design: preferences, because combat resolution is synchronous)
 
-## Phase 4 — Act I: Whispers of the Veil
+## Phase 4 — Act I: Whispers of the Veil ✅ (v0.3)
 Whispering Woods, ruins of Valdros, Ashenford; recruitment of the remaining seven companions; Sister Maren's betrayal (or its absence if she forgot Elsa); Ossaryx, the Gloaming Wyrm; consequences of every prologue choice (Lira, Corvin, Ysolt, the Grey Hawks, rescued townsfolk).
-**Criteria:** Act I completable end-to-end in an automated test from a prologue save.
+**Criteria:** Act I completable end-to-end in an automated test from a prologue save. ✅ (`tests/act1.e2e.test.ts` continues the real prologue playthrough to the Act I epilogue on earned XP only.)
+
+- [x] World map with travel time, road events (weighted, once-only) and locked Act II regions
+- [x] Wilderness camping with interruption risk
+- [x] Hollowmere the morning after: council, Hale (Corvin's fate), Maren's request, Seris
+- [x] Whispering Woods: the Greenmother and the Old Path, the Thornwake (Caddoc Briar) and the Whispering Stone, the woodcutters' Red Cord, Orren and Korr
+- [x] Ashenford: the Wren House, the Dawnblade mob, the Emberglass glassworks, the Unbound safe house, the garrison, the Conclave office, docks, hospice, inn; Kael, Nima, Varek, Tessa, Ilyra and Brakka
+- [x] Valdros: four realities (ruin / flooded / burning / inhabited) with their own grids, inhabitants and dangers; Vaelis
+- [x] The Senate Dome: Maren's betrayal (or its absence if `maren_forgets`), the Conclave ambush (led by Ysolt or High Seeker Vex; can be turned or talked down if the party was warned), Ossaryx (fight or the hidden "send it home" path), Severin's projection
+- [x] Five routes to learning of the ambush; every prologue choice (Lira, Corvin, Ysolt, the Grey Hawks, rescued townsfolk) and companion-quest outcome carried forward
+- [x] Act I epilogue (48 condition-driven lines) and chapter flag for Act II
+- [x] Milestone XP on the main quest so the party reaches the designed levels (4 → 5 → 6) on the critical path
+- [ ] Faction questlines beyond the Ashenford beats (Act II)
 
 ## Phase 5 — Acts II–VI
 Per `STORY_BIBLE.md` §9–10, one act per milestone, each with an end-to-end test and save compatibility with the previous act. Six endings including the hidden one.

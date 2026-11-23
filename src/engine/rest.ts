@@ -24,8 +24,9 @@ export function shortRest(s: GameState): string {
     let healed = 0;
     while (c.hitDice > 0 && c.hp < c.maxHp * 0.75) {
       c.hitDice--;
-      healed += Math.max(1, rollDice(`1d${die}`).total + mod(c, 'con'));
-      c.hp = Math.min(c.maxHp, c.hp + healed);
+      const roll = Math.max(1, rollDice(`1d${die}`).total + mod(c, 'con'));
+      healed += roll;
+      c.hp = Math.min(c.maxHp, c.hp + roll);
     }
     if (songBonus) c.hp = Math.min(c.maxHp, c.hp + songBonus);
     for (const r of Object.values(c.resources)) if (r.recharge === 'short') r.used = 0;

@@ -2,8 +2,8 @@
 
 A single-player, D&D-inspired fantasy role-playing game for the browser. You create one adventurer and travel with **three CPU-controlled companions** who have their own opinions, tactics and memories, guided by an in-game **Dungeon Master engine**. Original world, original story, d20 rules.
 
-> **Current build: v0.2 — the complete, playable Prologue ("The Bell That Never Rang") plus the Phase 3 systems: class features to level 10, spells to 5th level, crafting, factions, companion personal quests and conflicts, legendary monsters.**
-> Acts I–VI are designed (see `STORY_BIBLE.md`) but **not yet implemented**. See `DEVELOPMENT_STATUS.md` for exactly what works.
+> **Current build: v0.3 — the complete Prologue ("The Bell That Never Rang") and the complete Act I ("Whispers of the Veil"): Hollowmere the morning after, the Whispering Woods, the city of Ashenford, the four realities of the ruined city of Valdros and the Senate Dome, ending with Ossaryx, the Gloaming Wyrm, and Archon Severin's voice. All ten companions can be recruited.** Plus the Phase 3 systems: class features to level 10, spells to 5th level, crafting, factions, companion personal quests and conflicts, legendary monsters.
+> Acts II–VI are designed (see `STORY_BIBLE.md`) but **not yet implemented**. See `DEVELOPMENT_STATUS.md` for exactly what works.
 
 ## Requirements
 
@@ -29,6 +29,7 @@ The build in `dist/` is fully static (relative paths), so it can be opened from 
 
 1. **New Game** → create your adventurer: name and portrait colour, ancestry, class, background, ability scores (point buy, standard array or 4d6-drop-lowest), skills, spells, personality, then **choose exactly three companions** from ten, and a difficulty.
 2. Explore **Hollowmere** during the Festival of Lanterns. Talk to people, shop, hang a lantern on the Lantern Tree. At midnight, a bell rings from a tower that fell eighty years ago…
+3. **Act I** begins the morning after. Leave Hollowmere by the south road to open the **world map** (`M`): travel takes hours and may bring road events. Seek the Greenmother in the **Whispering Woods**, learn what **Ashenford** knows, and follow the Old Path to **Valdros**, a ruin that flickers between other lives — the flickers in its streets shift the whole city into another reality, and each reality opens a different way into the Senate Dome. You can camp in the wild (`K`), but camps can be interrupted.
 
 ### Controls
 

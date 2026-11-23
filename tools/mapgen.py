@@ -281,6 +281,7 @@ def valdros(variant):
     # city wall ring and streets
     box(g, 4, 3, 43, 36, '#')
     rect(g, 22, 36, 25, 36, '.')                  # south gate (broken)
+    rect(g, 21, 37, 26, 38, '.')                  # the Old Path arrives outside the gate
     rect(g, 5, 4, 42, 35, '.')
     # avenue south -> north
     rect(g, 22, 4, 25, 35, '=')
@@ -383,6 +384,13 @@ checks={'hollowmere':[(25,31),(25,0),(10,16),(22,7),(28,5),(33,13),(33,19),(41,9
  'undercroft':[(21,2),(4,7),(35,2),(8,15),(7,27),(21,15),(36,12),(40,18),(21,25),(21,31),(40,19)],
  'vault':[(13,20),(13,9),(13,5)]}
 ok=True
+# every named point must itself be walkable (bfs only checks neighbours)
+for m, pts in POI.items():
+    for n, (x, y) in pts.items():
+        if n in ('fountain', 'anchor', 'anchor_stone', 'woodcutter_fire', 'thornwake_fire', 'observatory', 'dome_gate', 'dome_east', 'dome_west'): continue
+        for mm in [k for k in maps if k == m or k.startswith(m + '@')]:
+            if (mm, n) == ('valdros@inhabited', 'vaelis_spot'): continue  # Vaelis is not there in that reality
+            if maps[mm][y][x] in BLOCK: print('POI ON BLOCKING TILE', mm, n, (x, y), maps[mm][y][x]); ok = False
 for m, names in act1_checks.items():
     sx, sy = POI[m][names[0]]
     reach = bfs(m, sx, sy)

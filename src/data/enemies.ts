@@ -131,7 +131,7 @@ export const ENEMIES: EnemyTemplate[] = [
     desc: 'The armoured echo of a knight from an erased kingdom, still keeping a vigil no one remembers ordering. Its blade cuts at memory as much as flesh.',
   },
   {
-    id: 'ossaryx', name: 'Ossaryx, the Gloaming Wyrm', type: 'aberration', level: 6, abilities: ab(20, 12, 18, 14, 15, 18), ac: 17, hp: '16d12+64', speed: 8,
+    id: 'ossaryx', name: 'Ossaryx, the Gloaming Wyrm', type: 'aberration', level: 6, abilities: ab(20, 12, 18, 14, 15, 18), ac: 17, hp: '15d12+45', speed: 8,
     actions: ['m_wyrm_bite', 'm_dusk_breath', 'm_frightful_presence'], multiattack: 2, resist: ['necrotic', 'cold'], vuln: ['radiant'], condImmune: ['frightened', 'charmed'],
     xp: 3900, ai: 'brute', resources: { breath: 1, presence: 1 }, recharge: ['breath'], boss: true, glyph: 'O', color: '#3e4a7a',
     legendary: { per: 2, actions: [{ id: 'lg_tail', cost: 1 }, { id: 'lg_wing', cost: 2 }] },

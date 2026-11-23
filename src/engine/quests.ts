@@ -10,7 +10,7 @@ export function startQuest(s: GameState, id: string, stage: string): string | nu
   if (s.quests[id]) return setStage(s, id, stage);
   s.quests[id] = { status: 'active', stage, stagesDone: [], clues: [], startedAt: s.time.day };
   addLog(s, 'system', `New quest: ${def.title}`);
-  return `New quest: ${def.title}`;
+  return `New quest: ${def.title}${milestone(s, def.stages[stage].xp)}`;
 }
 
 /** Advance a quest. Stages can only move forward (no regressions) and completed quests are frozen. */
@@ -25,7 +25,15 @@ export function setStage(s: GameState, id: string, stage: string): string | null
   if (!q.stagesDone.includes(q.stage)) q.stagesDone.push(q.stage);
   q.stage = stage;
   addLog(s, 'system', `Quest updated: ${def.title}`);
-  return `Quest updated: ${def.title}`;
+  return `Quest updated: ${def.title}${milestone(s, def.stages[stage].xp)}`;
+}
+
+/** Milestone XP for reaching a stage (stages only move forward, so it is granted once). */
+function milestone(s: GameState, xp: number | undefined): string {
+  if (!xp) return '';
+  awardXp(s, xp);
+  addLog(s, 'system', `Milestone: +${xp} XP`);
+  return ` (+${xp} XP)`;
 }
 
 export function addClue(s: GameState, id: string, clue: string): void {
