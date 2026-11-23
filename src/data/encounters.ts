@@ -5,7 +5,7 @@ export interface EncounterDef {
   name: string;
   map: string;
   /** Absolute map coordinates, or offsets from the party leader when `relative` is set. */
-  enemies: { t: string; x: number; y: number }[];
+  enemies: { t: string; x: number; y: number; elite?: boolean }[];
   relative?: boolean;
   objects?: { id: string; kind: 'pillar' | 'barrel'; x: number; y: number; hp: number; ac: number; name: string }[];
   intro: string;
@@ -101,4 +101,6 @@ export const ENCOUNTERS: EncounterDef[] = [
   },
 ];
 
+import { CQ_ENCOUNTERS } from './companionQuests';
+ENCOUNTERS.push(...CQ_ENCOUNTERS);
 export const ENCOUNTER_BY_ID: Record<string, EncounterDef> = Object.fromEntries(ENCOUNTERS.map((e) => [e.id, e]));

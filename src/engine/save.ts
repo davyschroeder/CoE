@@ -49,6 +49,8 @@ export function serialize(s: GameState, meta: SaveMeta): string {
 const MIGRATIONS: Record<number, (s: any) => any> = {
   // 0 → 1: example scaffold (pre-release saves lacked `orders`).
   0: (s) => ({ ...s, orders: s.orders ?? { stance: 'initiative', avoidCombat: false, protectWeakest: false, conserve: false, stealth: false }, version: 1 }),
+  // 1 → 2 (Phase 3): reaction preferences for the player character.
+  1: (s) => ({ ...s, orders: { ...s.orders, reactions: s.orders?.reactions ?? { shield: 'auto', opportunity: 'always', defensive: 'auto' } }, version: 2 }),
 };
 
 export function migrate(raw: any): GameState {

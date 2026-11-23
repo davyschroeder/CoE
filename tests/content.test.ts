@@ -133,3 +133,15 @@ describe('content integrity', () => {
     for (const c of COMPANIONS) for (const sp of [...(c.cantrips ?? []), ...(c.spells ?? [])]) expect(ACTION_BY_ID[sp]?.classes?.includes(c.classId), `${c.id}: ${sp}`).toBe(true);
   });
 });
+
+import { FACTIONS } from '../src/data/factions';
+import { RECIPES } from '../src/data/recipes';
+describe('phase 3 data', () => {
+  it('faction visibility conditions and recipes are valid', () => {
+    for (const f of FACTIONS) expect(condErr(f.knownIf), f.id).toBeNull();
+    for (const r of RECIPES) {
+      expect(ITEM_BY_ID[r.output.itemId], r.id).toBeTruthy();
+      for (const [id] of r.materials) expect(ITEM_BY_ID[id], `${r.id}: ${id}`).toBeTruthy();
+    }
+  });
+});

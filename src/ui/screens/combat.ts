@@ -8,7 +8,7 @@ import { COMPANION_BY_ID } from '../../data/companions';
 import { ENEMY_BY_ID } from '../../data/enemies';
 import { tile } from '../../data/maps/tiles';
 import { armorClass, spellSlotsMax, slotsAvailable, resourceLeft, speed } from '../../engine/character';
-import { awardXp, addLog } from '../../engine/state';
+import { awardXp, addLog, addItem } from '../../engine/state';
 import { bark } from '../../engine/companionMind';
 import { drawTile, drawToken, glow } from '../render/tiles';
 import { charPortrait } from '../portraits';
@@ -146,12 +146,14 @@ export class CombatScreen implements Screen {
     if (r === 'victory') {
       const ready = awardXp(s, this.cb.xpEarned);
       sfx('levelup');
-      const loot = Math.round(this.cb.combatants.filter((c) => c.side === 'enemy' && c.char.creatureType === 'humanoid').length * (2 + Math.random() * 8));
+      const loot = this.cb.goldLoot;
       if (loot) s.gold += loot;
-      addLog(s, 'system', `Victory: +${this.cb.xpEarned} XP${loot ? `, ${loot} gold` : ''}.`);
+      const drops = this.cb.loot.map((l) => { addItem(s, l.itemId, l.qty); return `${ITEM_BY_ID[l.itemId]?.name ?? l.itemId}${l.qty > 1 ? ` ×${l.qty}` : ''}`; });
+      addLog(s, 'system', `Victory: +${this.cb.xpEarned} XP${loot ? `, ${loot} gold` : ''}${drops.length ? `; found ${drops.join(', ')}` : ''}.`);
       modal('Victory', (close) => h('div', { class: 'narration' },
         h('p', null, `${this.cb.encounter.name} — the battle is won.`),
         h('p', null, `Experience: +${this.cb.xpEarned} XP each${loot ? ` · Gold: +${loot}` : ''}`),
+        drops.length ? h('p', null, `Spoils: ${drops.join(', ')}`) : null,
         ready.length ? h('p', { class: 'good' }, `${ready.join(', ')} can level up!`) : null,
         h('button', { class: 'btn', onclick: () => { close(); } }, 'Continue')), { onClose: () => this.onDone('victory') });
     } else if (r === 'defeat') {

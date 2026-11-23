@@ -7,6 +7,7 @@ import {
   abilityScore, mod, armorClass, speed, initiativeBonus, passivePerception, saveBonus, skillBonus, features, prof, xpToNext, canLevelUp,
   needsSubclass, isAsiLevel, needsFightingStyle, spellGains, applyLevelUp, autoLevelChoices, castableSpells, preparedLimit, spellSlotsMax,
   slotsAvailable, spellAttackBonus, spellSaveDC, maxSpellLevel, computeMaxHp, mainWeapon, weaponAttackBonus, weaponDamageBonus, weaponDice, type LevelChoices,
+  secretsGain, expertiseGain, anyClassSpells,
 } from '../../engine/character';
 import { ABILITY_NAMES, ALL_SKILLS, SKILL_ABILITY, SKILL_NAMES } from '../../rules/abilities';
 import { CLASS_BY_ID, FEATS, FIGHTING_STYLES } from '../../data/classes';
@@ -119,10 +120,19 @@ export function levelUpFlow(app: App, c: Character, after: () => void): void {
     }
     if (gains.cantrips) root.append(spellPicker('New cantrips', pool.filter((p) => p.level === 0 && !c.knownSpells.includes(p.id)), (ch.newCantrips ??= []), gains.cantrips, render));
     if (gains.spells) root.append(spellPicker('New spells', pool.filter((p) => (p.level ?? 0) > 0 && !c.knownSpells.includes(p.id)), (ch.newSpells ??= []), gains.spells, render));
+    const secrets = secretsGain(c);
+    if (secrets) root.append(spellPicker('Magical Secrets (any class)', anyClassSpells(Math.max(1, maxSpellLevel({ ...c, level: next } as Character))).filter((p) => !c.knownSpells.includes(p.id) && !p.classes?.includes(c.classId)), (ch.secretSpells ??= []), secrets, render));
+    const expN = expertiseGain(c);
+    if (expN) {
+      const chosen = (ch.expertise ??= []);
+      root.append(h('h4', null, `Expertise (${chosen.length}/${expN})`), h('div', { class: 'pick-grid small' }, c.skillProfs.filter((sk) => !c.expertise.includes(sk)).map((sk) =>
+        h('div', { class: `pick-card ${chosen.includes(sk) ? 'sel' : ''}`, onclick: () => { const i = chosen.indexOf(sk); if (i >= 0) chosen.splice(i, 1); else if (chosen.length < expN) chosen.push(sk); render(); } }, h('div', { class: 'pick-title' }, SKILL_NAMES[sk])))));
+    }
     root.append(h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => {
       if (needsSubclass(c, next) && !ch.subclassId) { toast('Choose a specialisation.', 'bad'); return; }
       if (needsFightingStyle(c, next) && !ch.fightingStyle) { toast('Choose a fighting style.', 'bad'); return; }
       if (isAsiLevel(c.classId, next) && !ch.feat && Object.values(ch.asi ?? {}).reduce((a, b) => a + (b ?? 0), 0) < 2) { toast('Spend 2 ability points or choose a feat.', 'bad'); return; }
+      if (expertiseGain(c) && (ch.expertise?.length ?? 0) < expertiseGain(c)) { toast('Choose your expertise skills.', 'bad'); return; }
       applyLevelUp(c, ch);
       sfx('levelup');
       toast(`${c.name} is now level ${c.level}!`, 'good');

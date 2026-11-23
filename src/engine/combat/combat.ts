@@ -4,9 +4,10 @@
  * The engine is the single authority on the rules: both the player UI and the CPU AI must go
  * through `canUse`, `validTargets`, `moveAlong` and `perform`, so the AI cannot cheat.
  */
-import type { Character, ConditionId, DamageType, GameState, ActiveCondition } from '../types';
+import type { Ability, Character, ConditionId, DamageType, GameState, ActiveCondition } from '../types';
 import { ACTION_BY_ID, type ActionDef } from '../../data/actions';
 import { ENCOUNTER_BY_ID, type EncounterDef } from '../../data/encounters';
+import { ENEMY_BY_ID } from '../../data/enemies';
 import type { MapDef } from '../../data/maps/types';
 import { tile } from '../../data/maps/tiles';
 import { ITEM_BY_ID } from '../../data/items';
@@ -18,11 +19,11 @@ import {
   cantripDiceMultiplier, creatureType, slotsAvailable,
 } from '../character';
 import { rollD20, rollDice, rollDie, resolveMode, averageDice, type RollMode } from '../../core/dice';
-import { savingThrow, skillCheck, deathSave, contest, type CheckResult } from '../../rules/checks';
+import { savingThrow, skillCheck, deathSave, contest, type CheckResult, type BonusPart } from '../../rules/checks';
 import { applyDamage, heal } from '../damage';
 import { activeParty, addLog, recordRoll, mapRuntime } from '../state';
 import { instability } from '../exploration';
-import { chance } from '../../core/rng';
+import { chance, random } from '../../core/rng';
 import { ABILITY_NAMES } from '../../rules/abilities';
 
 // ─────────────────────────────── Types
@@ -104,9 +105,13 @@ export class Combat {
   xpEarned = 0;
   private destroyedTiles: string[] = [];
 
-  constructor(public s: GameState, encounterId: string, opts: { ambush?: 'party' | 'enemy' } = {}) {
-    const enc = ENCOUNTER_BY_ID[encounterId];
-    if (!enc) throw new Error(`Unknown encounter ${encounterId}`);
+  loot: { itemId: string; qty: number }[] = [];
+  goldLoot = 0;
+  legendaryLeft = new Map<string, number>();
+
+  constructor(public s: GameState, encounter: string | EncounterDef, opts: { ambush?: 'party' | 'enemy' } = {}) {
+    const enc = typeof encounter === 'string' ? ENCOUNTER_BY_ID[encounter] : encounter;
+    if (!enc) throw new Error(`Unknown encounter ${encounter}`);
     this.encounter = enc;
     this.map = getMap(enc.map);
     this.settings = DIFFICULTY_SETTINGS[s.difficulty] ?? DIFFICULTY_SETTINGS.adventurer;
@@ -124,7 +129,7 @@ export class Combat {
     const inst = instability(s, this.map.id);
     enc.enemies.forEach((e, i) => {
       const echo = inst >= 5 && !ENEMY_BOSS.has(e.t) && chance(0.25);
-      const ch = createEnemy(e.t, { hpMult: this.settings.enemyHpMult, echoTouched: echo, idSuffix: `${i}` });
+      const ch = createEnemy(e.t, { hpMult: this.settings.enemyHpMult, echoTouched: echo, idSuffix: `${i}`, elite: e.elite });
       let x = e.x, y = e.y;
       if (enc.relative) { x = lead.x + e.x; y = lead.y + e.y; }
       const p = this.freeSpotsNear(x, y, 1, occupied)[0] ?? { x, y };
@@ -253,7 +258,7 @@ export class Combat {
         if (dx && dy && (!this.walkable(p.x + dx, p.y) || !this.walkable(p.x, p.y + dy))) continue;
         const occ = this.occupant(nx, ny);
         if (occ && occ.side !== c.side && occ.char.hp > 0) continue;
-        const step = tile(this.tileChar(nx, ny)).difficult ? 2 : 1;
+        const step = this.stepCost(c, nx, ny);
         const cost = p.cost + step;
         if (cost > budget) continue;
         const k = key(nx, ny);
@@ -295,7 +300,7 @@ export class Combat {
         if (dx && dy && (!this.walkable(p.x + dx, p.y) || !this.walkable(p.x, p.y + dy))) continue;
         const occ = this.occupant(nx, ny);
         if (occ && occ.side !== c.side && occ.char.hp > 0) continue;
-        const cost = p.cost + (tile(this.tileChar(nx, ny)).difficult ? 2 : 1);
+        const cost = p.cost + this.stepCost(c, nx, ny);
         const k = key(nx, ny);
         const prev = res.get(k);
         if (prev && prev.cost <= cost) continue;
@@ -307,8 +312,8 @@ export class Combat {
   }
 
   /** Path cost for a given path (difficult terrain doubles). */
-  pathCost(path: { x: number; y: number }[]): number {
-    return path.reduce((a, p) => a + (tile(this.tileChar(p.x, p.y)).difficult ? 2 : 1), 0);
+  pathCost(path: { x: number; y: number }[], c?: Combatant): number {
+    return path.reduce((a, p) => a + this.stepCost(c ?? this.current(), p.x, p.y), 0);
   }
 
   /** Squares along a path where moving out provokes opportunity attacks (for UI warnings and AI). */
@@ -330,7 +335,7 @@ export class Combat {
 
   private rollInitiative(ambush?: 'party' | 'enemy') {
     for (const c of this.combatants) {
-      const adv = c.char.feats.includes('alert') ? 0 : 0;
+      const adv = hasFeature(c.char, 'feral_instinct') ? 1 : 0;
       const r = rollD20(resolveMode(adv, 0));
       c.initiative = r.natural + initiativeBonus(c.char) + (c.side === 'party' ? 0 : this.settings.enemyAttackBonus > 0 ? 1 : 0) + Math.random() * 0.01;
       if (c.side === 'party') recordRoll(this.s, { kind: 'initiative', label: 'Initiative', who: c.char.name, whoId: c.id, natural: r.natural, rolls: r.rolls, mode: r.mode, parts: [{ label: 'Initiative bonus', value: initiativeBonus(c.char) }], total: Math.floor(c.initiative), nat1: false, nat20: false });
@@ -354,10 +359,21 @@ export class Combat {
     }
     // Hazards at start of turn
     this.hazardAt(c, true);
+    for (const g of this.enemiesOf(c)) {
+      if (g.concentration?.actionId !== 'spirit_guardians' || g.char.hp <= 0 || dist(g, c) > 3 || ch.hp <= 0) continue;
+      const sv = this.save(c, 'wis', this.saveDcFor(g), { vsMagic: true });
+      const d = rollDice('3d8').total;
+      this.log(`${ch.name} is seared by ${g.char.name}’s spirit guardians (Wisdom ${sv.total} vs DC ${this.saveDcFor(g)}).`);
+      this.dealDamage(g, c, [{ amount: sv.success ? Math.floor(d / 2) : d, type: 'radiant' }], false);
+    }
     if (ch.hp <= 0) {
       if (c.side === 'party' && !ch.dead && !ch.stable && !this.encounter.nonlethal) this.doDeathSave(c);
       c.action = false; c.bonus = false; c.movement = 0;
       return;
+    }
+    if (hasFeature(ch, 'relentless_vanguard') && ch.hp < ch.maxHp / 2) {
+      const h = heal(ch, 5 + mod(ch, 'con'));
+      if (h) { this.events.push({ type: 'heal', targetId: c.id, amount: h }); this.log(`${ch.name} grits their teeth and fights on (+${h} HP).`); }
     }
     // Stand up from prone (costs half movement).
     if (hasCondition(ch, 'prone') && !hasCondition(ch, 'incapacitated')) {
@@ -376,7 +392,11 @@ export class Combat {
   private bossStartOfTurn(c: Combatant): void {
     const ch = c.char;
     const res = ch.combatResources ?? {};
-    if (ch.templateId === 'echo_sentinel' && res.beam === 0 && rollDie(6) >= 5) { res.beam = 1; this.log('The Sentinel\'s crystals blaze white again — the Erasure Beam has recharged.', 'phase'); }
+    const tpl = ch.templateId ? ENEMY_BY_ID[ch.templateId] : undefined;
+    for (const rid of tpl?.recharge ?? []) {
+      if (res[rid] === 0 && rollDie(6) >= 5) { res[rid] = 1; this.log(`${ch.name}’s ${rid} has recharged!`, 'phase'); }
+    }
+    if (tpl?.legendary) this.legendaryLeft.set(c.id, tpl.legendary.per);
     if (ch.templateId === 'bellwarden') {
       const pillars = this.objects.filter((o) => o.kind === 'pillar' && !o.destroyed).length;
       if (pillars > 0 && ch.hp < ch.maxHp) {
@@ -421,6 +441,8 @@ export class Combat {
     c.hasActed = true;
     this.endOfTurnConditions(c);
     if (this.checkEnd()) return this.flush();
+    this.legendaryActions(c);
+    if (this.checkEnd()) return this.flush();
     // Advance to the next living combatant.
     for (let guard = 0; guard < this.order.length * 2; guard++) {
       this.turnIndex++;
@@ -444,7 +466,7 @@ export class Combat {
     const keep: ActiveCondition[] = [];
     for (const k of ch.conditions) {
       if (k.saveEnds && ch.hp > 0) {
-        const r = savingThrow(ch, k.saveEnds.ability, k.saveEnds.dc, { vsMagic: true });
+        const r = this.save(c, k.saveEnds.ability, k.saveEnds.dc, { vsMagic: true, vs: k.id });
         this.events.push({ type: 'save', targetId: c.id, result: r });
         if (r.success) { this.log(`${ch.name} shakes off ${k.id}.`); this.events.push({ type: 'condition', targetId: c.id, condition: k.id, added: false }); continue; }
       }
@@ -461,7 +483,7 @@ export class Combat {
 
   checkEnd(): boolean {
     if (this.over) return true;
-    if (this.alive('enemy').length === 0) { this.over = 'victory'; this.log('Victory!', 'phase'); return true; }
+    if (this.alive('enemy').length === 0) { this.over = 'victory'; this.rollLoot(); this.log('Victory!', 'phase'); return true; }
     const standing = this.combatants.filter((c) => c.side === 'party' && !c.removed && c.char.hp > 0);
     if (standing.length === 0) { this.over = 'defeat'; this.log('The party has fallen...', 'phase'); return true; }
     return false;
@@ -479,7 +501,7 @@ export class Combat {
   moveAlong(c: Combatant, path: { x: number; y: number }[]): CombatEvent[] {
     if (c.id !== this.current().id) throw new Error('Not this combatant\'s turn');
     if (!path.length) return [];
-    const cost = this.pathCost(path);
+    const cost = this.pathCost(path, c);
     if (cost > c.movement) throw new Error('Not enough movement');
     const final = path[path.length - 1];
     const occ = this.occupant(final.x, final.y);
@@ -499,7 +521,7 @@ export class Combat {
           }
         }
       }
-      c.movement -= tile(this.tileChar(step.x, step.y)).difficult ? 2 : 1;
+      c.movement -= this.stepCost(c, step.x, step.y);
       c.x = step.x; c.y = step.y;
       walked.push(step);
       this.hazardAt(c, false);
@@ -525,7 +547,17 @@ export class Combat {
     }
   }
 
+  /** Whether a reaction may be used, honouring the player's reaction preferences. */
+  private allowsReaction(c: Combatant, kind: 'shield' | 'opportunity' | 'defensive'): boolean {
+    if (c.char.kind !== 'player') return true;
+    const r = this.s.orders.reactions ?? { shield: 'auto', opportunity: 'always', defensive: 'auto' };
+    if (kind === 'shield') return r.shield === 'auto' || (r.shield === 'lowhp' && c.char.hp <= c.char.maxHp / 2);
+    if (kind === 'opportunity') return r.opportunity === 'always';
+    return r.defensive === 'auto';
+  }
+
   private opportunityAttack(attacker: Combatant, target: Combatant): void {
+    if (!this.allowsReaction(attacker, 'opportunity')) { this.log(`${attacker.char.name} lets ${target.char.name} go.`); return; }
     attacker.reaction = false;
     this.log(`${attacker.char.name} makes an opportunity attack against ${target.char.name}!`);
     const act = this.primaryMeleeAction(attacker);
@@ -618,6 +650,7 @@ export class Combat {
 
   isTargetable(c: Combatant, a: ActionDef, t: Combatant): boolean {
     if (t.removed) return false;
+    if (t.char.conditions.some((k) => k.value === 88) && t.side !== c.side) return false;
     const d = dist(c, t);
     const range = this.rangeOf(c, a);
     switch (a.target) {
@@ -732,9 +765,11 @@ export class Combat {
     else if (cost === 'bonus') c.bonus = false;
     if (a.kind === 'spell' && c.quickened && a.cost === 'action') c.quickened = false;
     if (a.kind === 'spell' || a.attack) {
-      ch.conditions = ch.conditions.filter((k) => k.id !== 'hidden' && !(k.id === 'invisible' && (a.attack || a.damage)));
+      ch.conditions = ch.conditions.filter((k) => k.id !== 'hidden' && !(k.id === 'invisible' && k.value !== 99 && (a.attack || a.damage)));
     }
     if (a.kind === 'spell') this.log(`${ch.name} casts ${a.name}${slot ? ` (level ${slot} slot)` : ''}.`);
+    if (slot && hasFeature(ch, 'resonant_ward')) { const th = 2 * slot + Math.max(0, mod(ch, 'int')); ch.tempHp = Math.max(ch.tempHp, th); }
+    const surge = slot > 0 && hasFeature(ch, 'wild_surge') && rollDie(20) <= 2;
     if (tc && c.side === 'party' && tc.side === 'enemy') this.lastPlayerTarget = tc.id;
 
     // Concentration
@@ -744,6 +779,7 @@ export class Combat {
     }
 
     this.resolveAction(c, a, tc, tobj, point, slot);
+    if (surge && !this.over) this.wildSurge(c);
     this.checkEnd();
     return this.flush();
   }
@@ -785,6 +821,16 @@ export class Combat {
         return;
       }
       case 'summon_echoes': return this.summonEchoes(c);
+      case 'aid': {
+        const targets = [...(tc ? [tc] : []), ...this.alliesInRange(c, a.range).filter((x) => x !== tc && !x.char.dead)].slice(0, 3);
+        const amt = 5 * Math.max(1, slot - 1);
+        for (const t of targets) { t.char.tempHp = Math.max(t.char.tempHp, amt); const h = heal(t.char, 5); this.events.push({ type: 'heal', targetId: t.id, amount: h }); }
+        this.log(`${targets.map((t) => t.char.name).join(', ')} are fortified (+${amt} temporary HP).`);
+        return;
+      }
+      case 'spirit_guardians':
+        this.log(`Spectral lantern-bearers wheel around ${ch.name}.`);
+        return;
     }
     // Weapon / attack-roll actions
     if (a.attack) {
@@ -814,7 +860,7 @@ export class Combat {
         if (sculpt && t.side === c.side) continue;
         if (a.onlyVs === 'undead' && !['undead', 'echo'].includes(creatureType(t.char))) continue;
         if (a.special === 'taunt' && t.side === c.side) continue;
-        if (a.id === 'turn_undead' && t.side === c.side) continue;
+        if ((a.id === 'turn_undead' || a.id === 'destructive_wave') && t.side === c.side) continue;
         this.applySaveEffect(c, t, a, slot);
       }
       for (const o of this.objects.filter((o) => !o.destroyed && tiles.some((p) => p.x === o.x && p.y === o.y))) {
@@ -836,6 +882,7 @@ export class Combat {
         const h = heal(t.char, Math.max(1, amt));
         this.events.push({ type: 'heal', targetId: t.id, amount: h });
         this.log(`${t.char.name} regains ${h} HP.`);
+        if (t.id !== c.id && hasFeature(ch, 'blessed_healer')) { const sh = heal(ch, 2 + (slot || 1)); if (sh) this.events.push({ type: 'heal', targetId: c.id, amount: sh }); }
       }
       return;
     }
@@ -843,6 +890,12 @@ export class Combat {
       const amt = rollDice(a.tempHp).total;
       ch.tempHp = Math.max(ch.tempHp, amt);
       this.log(`${ch.name} gains ${amt} temporary HP.`);
+      return;
+    }
+    if (a.removeConditions && tc && a.special === 'greater_restoration') {
+      const before = tc.char.conditions.length;
+      tc.char.conditions = tc.char.conditions.filter((k) => !a.removeConditions!.includes(k.id));
+      this.log(before > tc.char.conditions.length ? `${tc.char.name} is fully restored.` : `${tc.char.name} has nothing to cure.`);
       return;
     }
     if (a.removeConditions && tc) {
@@ -951,7 +1004,8 @@ export class Combat {
   }
 
   resolveAttack(c: Combatant, t: Combatant, a: ActionDef, o: { slot?: number; opportunity?: boolean } = {}): boolean {
-    const { mode, reasons } = this.attackMode(c, t, a);
+    let { mode, reasons } = this.attackMode(c, t, a);
+    if (o.opportunity && hasFeature(t.char, 'escape_the_horde')) { mode = mode === 'advantage' ? 'normal' : 'disadvantage'; reasons = [...reasons, '− Escape the Horde']; }
     let r = rollD20(mode);
     let natural = r.natural;
     if (c.char.ancestry === 'halfling' && natural === 1) { r = rollD20(mode); natural = r.natural; }
@@ -959,7 +1013,14 @@ export class Combat {
     if (this.highGround(c, t, a)) bonusParts.push({ label: 'High ground', value: 2 });
     if (hasCondition(c.char, 'blessed')) bonusParts.push({ label: 'Bless', value: rollDie(4) });
     const insp = c.char.conditions.find((k) => k.id === 'inspired');
-    if (insp) { bonusParts.push({ label: 'Inspiration', value: rollDie(insp.value ?? 6) }); c.char.conditions = c.char.conditions.filter((k) => k !== insp); }
+    let valorDie = 0;
+    if (insp) {
+      const v = rollDie(insp.value ?? 6);
+      const bard = this.get(insp.sourceId ?? '');
+      if (bard && hasFeature(bard.char, 'combat_inspiration')) valorDie = rollDie(insp.value ?? 6);
+      bonusParts.push({ label: 'Inspiration', value: v });
+      c.char.conditions = c.char.conditions.filter((k) => k !== insp);
+    }
     let total = natural + bonusParts.reduce((s, p) => s + p.value, 0);
     let ac = this.targetAC(c, t, a);
     const critOn = a.attack === 'spell' || a.kind === 'monster' ? 20 : critRange(c.char);
@@ -985,28 +1046,33 @@ export class Combat {
     this.log(`${c.char.name} → ${t.char.name}: ${a.name} ${natural}+${total - natural} = ${total} vs AC ${ac}${modeText} — ${crit && hit ? 'CRITICAL HIT!' : hit ? 'hit' : natural === 1 ? 'natural 1, miss' : 'miss'}`, crit && hit ? 'crit' : 'info');
     if (!hit) return false;
     const dmg = this.rollActionDamage(c, a, crit, o.slot ?? 0, t);
+    if (valorDie) dmg.push({ amount: valorDie, type: dmg[0]?.type ?? 'bludgeoning' });
     this.onHitExtras(c, t, a, crit, dmg);
     this.dealDamage(c, t, dmg, crit);
     if (a.condition && t.char.hp > 0 && !a.save) this.addCondition(c, t, a.condition.id, a.condition.duration, { value: a.condition.value });
     if (a.special === 'no_reaction') t.reaction = false;
     if (a.special === 'knockdown' && t.char.hp > 0) {
-      const sv = savingThrow(t.char, 'str', 11);
+      const sv = this.save(t, 'str', 11, { vs: 'prone' });
       this.events.push({ type: 'save', targetId: t.id, result: sv });
       if (!sv.success) this.addCondition(c, t, 'prone', -1);
     }
     if (a.special === 'poison_bite' && t.char.hp > 0) {
-      const sv = savingThrow(t.char, 'con', 12, { vs: 'poison' });
+      const sv = this.save(t, 'con', 12, { vs: 'poison' });
       this.events.push({ type: 'save', targetId: t.id, result: sv });
       if (!sv.success) this.addCondition(c, t, 'poisoned', 2);
     }
     if (a.special === 'reckless') this.addCondition(c, c, 'reckless', 1);
+    if (o.opportunity && hasFeature(c.char, 'relentless_avenger') && t.char.hp > 0) this.addCondition(c, t, 'slowed', 2);
+    if (a.special === 'drain') { const total = dmg.reduce((x, d) => x + d.amount, 0); const h = heal(c.char, Math.floor(total / 2)); if (h) { this.events.push({ type: 'heal', targetId: c.id, amount: h }); this.log(`${c.char.name} drinks ${h} HP of stolen life.`); } }
+    if (a.special === 'eldritch_blast' && hasFeature(c.char, 'repelling_blast') && t.char.hp > 0) this.pushAway(c, t, 1);
+    if (a.special === 'pull' && t.char.hp > 0) this.pullToward(c, t, 2);
     return true;
   }
 
   private defensiveReaction(attacker: Combatant, t: Combatant, total: number, ac: number): { newTotal?: number; acBonus?: number; reroll?: boolean } {
     const T = t.char;
     // Shield spell
-    if (t.reaction && t.char.hp > 0 && castableSpells(T).some((s) => s.id === 'shield') && lowestFreeSlot(T, 1) > 0 && total < ac + 5 && !(t.side === 'party' && this.s.orders.conserve && T.hp > T.maxHp / 2)) {
+    if (t.reaction && t.char.hp > 0 && this.allowsReaction(t, 'shield') && castableSpells(T).some((s) => s.id === 'shield') && lowestFreeSlot(T, 1) > 0 && total < ac + 5 && !(t.side === 'party' && this.s.orders.conserve && T.hp > T.maxHp / 2)) {
       t.reaction = false;
       T.spellSlotsUsed[lowestFreeSlot(T, 1)]++;
       this.addCondition(t, t, 'shielded', 1, { value: 5 });
@@ -1018,8 +1084,13 @@ export class Combat {
       this.log(`${T.name} raises a ward of silver light. (+5 AC)`);
       return { acBonus: 5 };
     }
+    if (t.reaction && this.allowsReaction(t, 'defensive') && hasFeature(T, 'entropic_ward') && resourceLeft(T, 'entropic_ward') > 0) {
+      t.reaction = false; T.resources.entropic_ward.used++;
+      this.log(`${T.name} wraps themself in the Choir’s silence — the attack falters!`);
+      return { reroll: true };
+    }
     // Warding Flare (self)
-    if (t.reaction && hasFeature(T, 'warding_flare') && resourceLeft(T, 'warding_flare') > 0) {
+    if (t.reaction && this.allowsReaction(t, 'defensive') && hasFeature(T, 'warding_flare') && resourceLeft(T, 'warding_flare') > 0) {
       t.reaction = false; T.resources.warding_flare.used++;
       this.log(`${T.name} flares with lantern-light, dazzling the attacker!`);
       return { reroll: true };
@@ -1041,6 +1112,11 @@ export class Combat {
           return { newTotal: total - cut };
         }
       }
+      if (hasFeature(A, 'improved_flare') && resourceLeft(A, 'warding_flare') > 0 && dist(ally, t) <= 6) {
+        ally.reaction = false; A.resources.warding_flare.used++;
+        this.log(`${A.name} flares with lantern-light to shield ${T.name}!`);
+        return { reroll: true };
+      }
       if (hasFeature(A, 'probability_twist') && resourceLeft(A, 'probability_twist') > 0 && dist(ally, t) <= 6) {
         ally.reaction = false; A.resources.probability_twist.used++;
         this.log(`${A.name} twists probability — the attack must be rerolled.`);
@@ -1058,6 +1134,7 @@ export class Combat {
       const w = off ? offhandWeapon(ch) ?? mainWeapon(ch) : mainWeapon(ch);
       const dice = weaponDice(ch, w);
       let base = rollDice(dice, crit).total;
+      if (crit && hasFeature(ch, 'brutal_critical')) base += rollDice(dice.replace(/^\d+d/, '1d')).total;
       if (ch.feats.includes('style_great') && w.weapon?.props.includes('twoHanded')) base = Math.max(base, rollDice(dice, crit).total);
       out.push({ amount: Math.max(1, base + weaponDamageBonus(ch, w, off)), type: w.weapon?.type ?? 'bludgeoning' });
       if (w.bonus?.damageExtra) out.push({ amount: rollDice(w.bonus.damageExtra.dice, crit).total, type: w.bonus.damageExtra.type });
@@ -1072,9 +1149,17 @@ export class Combat {
       if (a.special === 'toll' && t && t.char.hp < t.char.maxHp) dice = dice.replace('d8', 'd12');
       if (a.damage.upcast && slot > (a.level ?? 0) && (a.level ?? 0) > 0) for (let i = 0; i < slot - (a.level ?? 0); i++) dice += `+${a.damage.upcast}`;
       let amount = rollDice(dice, crit).total;
+      const rollDiceBase = amount;
       if (a.damage.mod) amount += a.kind === 'spell' ? spellMod(ch) : mod(ch, a.ability ?? 'str');
       if (a.special === 'eldritch_blast' && hasFeature(ch, 'agonizing_blast')) amount += Math.max(0, mod(ch, 'cha'));
       if (a.damage.type === 'fire' && hasFeature(ch, 'elemental_affinity')) amount += Math.max(0, mod(ch, 'cha'));
+      if (a.kind === 'spell' && (a.level ?? 0) === 0 && hasFeature(ch, 'potent_spellcasting')) amount += Math.max(0, mod(ch, 'wis'));
+      if (a.kind === 'spell' && ch.classId === 'wizard' && hasFeature(ch, 'empowered_evocation')) amount += Math.max(0, mod(ch, 'int'));
+      if (a.kind === 'spell' && (a.level ?? 0) > 0 && hasFeature(ch, 'empowered_spell') && resourceLeft(ch, 'sorcery_points') >= 3) {
+        const reroll = rollDice(dice, crit).total;
+        const base = rollDiceBase;
+        if (reroll > base) { amount += reroll - base; ch.resources.sorcery_points.used += 1; this.log(`${ch.name} empowers the spell (reroll ${base} → ${reroll}).`); }
+      }
       out.push({ amount: Math.max(0, amount), type: a.damage.type });
     }
     return out;
@@ -1096,6 +1181,8 @@ export class Combat {
           this.log(`Sneak Attack! (+${dice})`);
         }
       }
+      if (hasFeature(ch, 'divine_strike') && !c.onceFlags.includes('divine')) { dmg.push({ amount: rollDice('1d8', crit).total, type: 'radiant' }); c.onceFlags.push('divine'); }
+      if (hasFeature(ch, 'deadly_ambush') && !t.hasActed && !c.onceFlags.includes('ambush2')) { dmg.push({ amount: rollDice('2d6', crit).total, type: w.weapon?.type ?? 'piercing' }); c.onceFlags.push('ambush2'); this.log('Deadly Ambush!'); }
       if (hasFeature(ch, 'colossus_slayer') && !c.onceFlags.includes('colossus') && t.char.hp < t.char.maxHp) {
         dmg.push({ amount: rollDice('1d8', crit).total, type: w.weapon?.type ?? 'piercing' }); c.onceFlags.push('colossus');
       }
@@ -1122,6 +1209,7 @@ export class Combat {
       }
     }
     if ((ch.traits ?? []).includes('echo_touched')) dmg.push({ amount: rollDie(4), type: 'psychic' });
+    if (a.special === 'echo_blade') dmg.push({ amount: rollDice('1d6', crit).total, type: 'psychic' });
     if (hasCondition(ch, 'raging') && hasFeature(ch, 'ancestral_protectors') && !c.onceFlags.includes('ancestors')) {
       this.addCondition(c, t, 'marked', 2, { value: 5 }); c.onceFlags.push('ancestors');
     }
@@ -1160,7 +1248,7 @@ export class Combat {
       }
       this.events.push({ type: 'aoe', tiles, actionId: 'explosion', color: '#ff8a3d' });
       for (const t of this.combatants.filter((t) => !t.removed && t.char.hp > 0 && dist(t, o) <= 1)) {
-        const sv = savingThrow(t.char, 'dex', 12);
+        const sv = this.save(t, 'dex', 12);
         this.events.push({ type: 'save', targetId: t.id, result: sv });
         const d = rollDice('3d6').total;
         this.dealDamage(by, t, [{ amount: sv.success ? Math.floor(d / 2) : d, type: 'fire' }], false);
@@ -1180,24 +1268,26 @@ export class Combat {
     const save = a.save!;
     const dis = a.id === 'shatter' && creatureType(t.char) === 'construct' ? 1 : 0;
     const vs = a.condition?.id === 'frightened' ? 'frightened' : a.condition?.id === 'charmed' ? 'charmed' : undefined;
-    const r = savingThrow(t.char, save.ability, dc, { vsMagic: a.kind === 'spell', dis, vs });
+    const r = this.save(t, save.ability, dc, { vsMagic: a.kind === 'spell', dis, vs });
     if (t.side === 'party') recordRoll(this.s, r);
     this.events.push({ type: 'save', targetId: t.id, result: r });
     this.log(`${t.char.name} ${ABILITY_NAMES[save.ability]} save ${r.total} vs DC ${dc}: ${r.success ? 'success' : 'failure'}`);
     if (a.damage) {
       let dmg = this.rollActionDamage(c, a, false, slot, t);
-      if (r.success) dmg = save.half ? dmg.map((d) => ({ ...d, amount: Math.floor(d.amount / 2) })) : [];
+      const halfAnyway = save.half || ((a.level ?? 0) === 0 && a.kind === 'spell' && hasFeature(c.char, 'potent_cantrip'));
+      if (r.success) dmg = halfAnyway ? dmg.map((d) => ({ ...d, amount: Math.floor(d.amount / 2) })) : [];
       if (r.success && hasFeature(t.char, 'evasion') && save.ability === 'dex') dmg = [];
       if (dmg.length) this.dealDamage(c, t, dmg, false);
     }
     if (a.condition && (!r.success || !a.condition.onFail) && t.char.hp > 0) {
       if (a.condition.onFail && r.success) return;
       if (!r.success || !a.condition.onFail) {
-        const value = a.special === 'taunt' ? 4 : a.condition.value;
+        const value = a.special === 'taunt' ? 4 : a.special === 'banish' ? 88 : a.condition.value;
         const id = a.condition.id;
-        this.addCondition(c, t, id, a.condition.duration, { value, concentration: a.concentration, saveEnds: a.condition.saveEnds ? { ability: save.ability, dc } : undefined });
+        this.addCondition(c, t, id, a.condition.duration, { value, concentration: a.concentration, saveEnds: a.condition.saveEnds ? { ability: save.ability, dc } : undefined, endsOnDamage: a.special === 'hypnotic' || a.special === 'turn' });
+        if (a.special === 'hypnotic') this.addCondition(c, t, 'charmed', a.condition.duration, { concentration: true, endsOnDamage: true });
         if (a.special === 'turn') {
-          this.addCondition(c, t, 'incapacitated', a.condition.duration, {});
+          this.addCondition(c, t, 'incapacitated', a.condition.duration, { endsOnDamage: true });
           if (hasFeature(c.char, 'destroy_undead') && (t.char.monsterLevel ?? 1) <= 1) { t.char.hp = 0; this.handleDown(c, t, false); }
         }
         if (a.special === 'command') this.addCondition(c, t, 'incapacitated', 1, {});
@@ -1205,11 +1295,13 @@ export class Combat {
     }
   }
 
-  addCondition(source: Combatant, t: Combatant, id: ConditionId, duration: number, o: { value?: number; concentration?: boolean; saveEnds?: { ability: any; dc: number } } = {}): void {
+  addCondition(source: Combatant, t: Combatant, id: ConditionId, duration: number, o: { value?: number; concentration?: boolean; saveEnds?: { ability: any; dc: number }; endsOnDamage?: boolean } = {}): void {
     if (t.char.conditionImmunities?.includes(id)) { this.log(`${t.char.name} is immune to being ${id}.`); return; }
+    const blocked = this.conditionBlocked(t, id);
+    if (blocked) { this.log(`${t.char.name} is protected from being ${id} (${blocked}).`); return; }
     const dur = duration > 0 && source.id === t.id ? duration + 1 : duration;
     t.char.conditions = t.char.conditions.filter((k) => !(k.id === id && k.sourceId === source.id));
-    t.char.conditions.push({ id, duration: dur, sourceId: source.id, value: o.value, concentration: o.concentration, saveEnds: o.saveEnds });
+    t.char.conditions.push({ id, duration: dur, sourceId: source.id, value: o.value, concentration: o.concentration, saveEnds: o.saveEnds, endsOnDamage: o.endsOnDamage });
     if (o.concentration && source.concentration) source.concentration.targetIds.push(t.id);
     this.events.push({ type: 'condition', targetId: t.id, condition: id, added: true });
     if (!['disengaged', 'shielded', 'reckless'].includes(id)) this.log(`${t.char.name} is ${CONDITION_WORDS[id] ?? id}.`);
@@ -1227,6 +1319,15 @@ export class Combat {
     let total = 0;
     const notes: string[] = [];
     const wasDown = T.hp <= 0;
+    if (source && source.side !== t.side && T.hp > 0 && parts.length) {
+      const guard = this.alliesOf(t).find((al) => al.reaction && hasCondition(al.char, 'raging') && hasFeature(al.char, 'spirit_shield') && dist(al, t) <= 6);
+      if (guard) {
+        guard.reaction = false;
+        const red = rollDice('2d6').total;
+        parts = parts.map((p, i) => (i === 0 ? { ...p, amount: Math.max(0, p.amount - red) } : p));
+        this.log(`${guard.char.name}’s ancestral spirits shield ${T.name} (−${red}).`);
+      }
+    }
     for (const p of parts) {
       let amount = p.amount;
       // Bellwarden: resonance pillar ward
@@ -1234,7 +1335,7 @@ export class Combat {
         amount = Math.floor(amount / 2); notes.push('warded');
       }
       // Uncanny dodge
-      if (source && hasFeature(T, 'uncanny_dodge') && t.reaction && T.hp > 0 && amount >= 6) { t.reaction = false; amount = Math.floor(amount / 2); notes.push('uncanny dodge'); }
+      if (source && hasFeature(T, 'uncanny_dodge') && t.reaction && this.allowsReaction(t, 'defensive') && T.hp > 0 && amount >= 6) { t.reaction = false; amount = Math.floor(amount / 2); notes.push('uncanny dodge'); }
       const res = applyDamage(T, amount, p.type);
       if (res.note) notes.push(res.note);
       total += res.dealt;
@@ -1249,12 +1350,13 @@ export class Combat {
     if (total > 0) this.log(`${T.name} takes ${total} damage${notes.length ? ` (${notes.join(', ')})` : ''}.`);
     if (T.hp > 0 && t.concentration && total > 0) {
       const dc = Math.max(10, Math.floor(total / 2));
-      const r = savingThrow(T, 'con', dc, { adv: T.feats.includes('war_caster') ? 1 : 0 });
+      const r = this.save(t, 'con', dc, { adv: T.feats.includes('war_caster') ? 1 : 0 });
       if (!r.success) this.breakConcentration(t);
     }
     // Damage breaks turning
-    if (total > 0 && T.conditions.some((k) => k.id === 'incapacitated' && source && this.get(k.sourceId ?? '')?.char.classId === 'cleric')) {
-      T.conditions = T.conditions.filter((k) => !(k.id === 'incapacitated' || (k.id === 'frightened' && k.sourceId && this.get(k.sourceId)?.char.classId === 'cleric')));
+    if (total > 0 && T.conditions.some((k) => k.endsOnDamage)) {
+      T.conditions = T.conditions.filter((k) => !k.endsOnDamage);
+      this.log(`The pain snaps ${T.name} out of it.`);
     }
     if (T.hp <= 0 && !wasDown) this.handleDown(source, t, parts.every((p) => p.type !== 'radiant') && !crit, total);
     // Boss phase change
@@ -1284,6 +1386,8 @@ export class Combat {
       return;
     }
     // Party member drops
+    const ward = T.conditions.find((k) => k.id === 'deathward');
+    if (ward) { T.conditions = T.conditions.filter((k) => k !== ward); T.hp = 1; this.log(`Death Ward flares — ${T.name} stays standing with 1 HP!`, 'phase'); return; }
     if (T.ancestry === 'ashkin' && resourceLeft(T, 'unyielding') > 0) {
       T.resources.unyielding.used++;
       T.hp = 1;
@@ -1349,6 +1453,18 @@ export class Combat {
     if (!this.pushAway(c, t, 1)) this.addCondition(c, t, 'prone', -1, {});
   }
 
+  /** Pull a target toward the source, stopping adjacent to it. */
+  pullToward(source: Combatant, t: Combatant, squares: number): void {
+    for (let i = 0; i < squares && dist(source, t) > 1; i++) {
+      const nx = t.x + Math.sign(source.x - t.x), ny = t.y + Math.sign(source.y - t.y);
+      if (!this.walkable(nx, ny) || this.occupant(nx, ny)) break;
+      t.x = nx; t.y = ny;
+      this.events.push({ type: 'move', id: t.id, path: [{ x: nx, y: ny }] });
+      this.hazardAt(t, false);
+    }
+    this.log(`${t.char.name} is dragged toward ${source.char.name}.`);
+  }
+
   /** Push target away from source. Returns true if moved. Chasms and hazards hurt. */
   pushAway(source: Combatant, t: Combatant, squares: number): boolean {
     let moved = false;
@@ -1375,6 +1491,150 @@ export class Combat {
     const seen = this.enemiesOf(c).some((e) => 10 + mod(e.char, 'wis') + (e.char.skillProfs.includes('perception') ? prof(e.char) : 0) >= r.total && this.los(e, c) && dist(e, c) <= 8);
     if (!seen) this.addCondition(c, c, 'hidden', 2, {});
     else this.log(`${c.char.name} tries to hide but is spotted (Stealth ${r.total}).`);
+  }
+
+  // ─────────────────────────── Legendary actions
+
+  /** After another creature's turn, legendary creatures may spend legendary points. */
+  private legendaryActions(justActed: Combatant): void {
+    for (const L of this.combatants) {
+      if (L.id === justActed.id || L.removed || L.char.hp <= 0) continue;
+      const tpl = L.char.templateId ? ENEMY_BY_ID[L.char.templateId] : undefined;
+      if (!tpl?.legendary) continue;
+      if (hasCondition(L.char, 'stunned') || hasCondition(L.char, 'incapacitated')) continue;
+      const left = this.legendaryLeft.get(L.id) ?? tpl.legendary.per;
+      if (left <= 0) continue;
+      // Prefer the costliest affordable option that would hit at least two foes, else a single strike.
+      const foes = this.enemiesOf(L);
+      let used = false;
+      for (const opt of [...tpl.legendary.actions].sort((a, b) => b.cost - a.cost)) {
+        if (opt.cost > left) continue;
+        const a = ACTION_BY_ID[opt.id];
+        if (a.area?.fromSelf) {
+          const hit = foes.filter((f) => dist(f, L) <= a.area!.size).length;
+          if (hit < 2) continue;
+          this.log(`${L.char.name} uses a legendary action: ${a.name}!`, 'phase');
+          this.resolveAction(L, a, undefined, undefined, { x: L.x, y: L.y }, 0);
+        } else {
+          const t = foes.filter((f) => this.isTargetable(L, a, f)).sort((x, y) => x.char.hp - y.char.hp)[0];
+          if (!t) continue;
+          this.log(`${L.char.name} uses a legendary action: ${a.name}!`, 'phase');
+          this.resolveAttack(L, t, a);
+        }
+        this.legendaryLeft.set(L.id, left - opt.cost);
+        used = true;
+        break;
+      }
+      void used;
+    }
+  }
+
+  /** Roll drops for defeated enemies (called once on victory). */
+  private rollLoot(): void {
+    for (const c of this.combatants) {
+      if (c.side !== 'enemy' || c.summoned || c.char.hp > 0) continue;
+      const tpl = c.char.templateId ? ENEMY_BY_ID[c.char.templateId] : undefined;
+      if (!tpl) continue;
+      for (const [itemId, p, qty] of tpl.loot ?? []) if (random() < p || p >= 1) this.loot.push({ itemId, qty });
+      if (tpl.gold) this.goldLoot += rollDice(tpl.gold).total;
+    }
+  }
+
+  // ─────────────────────────── Saving throws with auras and rerolls
+
+  /** Saving throw including party auras (Aura of Protection, Countercharm) and luck features. */
+  save(t: Combatant, ab: Ability, dc: number, o: { vsMagic?: boolean; dis?: number; adv?: number; vs?: string } = {}): CheckResult {
+    const extra: BonusPart[] = [];
+    const aura = this.auraOfProtection(t);
+    if (aura) extra.push({ label: 'Aura of Protection', value: aura });
+    let adv = o.adv ?? 0;
+    if (o.vs === 'frightened' || o.vs === 'charmed') {
+      if (hasFeature(t.char, 'steadfast')) adv++;
+      if ([t, ...this.alliesOf(t)].some((al) => al.char.hp > 0 && hasFeature(al.char, 'countercharm') && dist(al, t) <= 6)) adv++;
+    }
+    let r = savingThrow(t.char, ab, dc, { vsMagic: o.vsMagic, dis: o.dis, adv, vs: o.vs, extra });
+    if (r.success) return r;
+    const T = t.char;
+    // Ember's Own Luck: +1d10 to a failed save.
+    if (hasFeature(T, 'embers_luck') && resourceLeft(T, 'embers_luck') > 0 && r.total + 10 >= dc) {
+      T.resources.embers_luck.used++;
+      const d = rollDie(10);
+      r = { ...r, total: r.total + d, parts: [...r.parts, { label: 'Ember’s Own Luck', value: d }] };
+      r.success = r.total >= dc;
+      this.log(`${T.name} calls on the Ember Court’s luck (+${d}).`);
+      if (r.success) return r;
+    }
+    // Bend Luck: an allied sorcerer adds 1d4 when it would matter.
+    const bender = this.alliesOf(t).find((al) => al.reaction && al.char.hp > 0 && hasFeature(al.char, 'bend_luck') && resourceLeft(al.char, 'sorcery_points') >= 2 && dist(al, t) <= 12);
+    if (bender && dc - r.total <= 4) {
+      bender.reaction = false;
+      bender.char.resources.sorcery_points.used += 2;
+      const d = rollDie(4);
+      r = { ...r, total: r.total + d, parts: [...r.parts, { label: 'Bend Luck', value: d }] };
+      r.success = r.total >= dc;
+      this.log(`${bender.char.name} bends luck for ${T.name} (+${d}).`);
+      if (r.success) return r;
+    }
+    // Indomitable: reroll the save.
+    if (hasFeature(T, 'indomitable') && resourceLeft(T, 'indomitable') > 0) {
+      T.resources.indomitable.used++;
+      this.log(`${T.name} refuses to yield — Indomitable!`);
+      return savingThrow(T, ab, dc, { vsMagic: o.vsMagic, dis: o.dis, adv, vs: o.vs, extra });
+    }
+    return r;
+  }
+
+  /** Highest Aura of Protection bonus affecting this creature (paladins within 2 squares, conscious). */
+  auraOfProtection(t: Combatant): number {
+    let best = 0;
+    for (const al of [t, ...this.alliesOf(t)]) {
+      if (al.char.hp <= 0 || !hasFeature(al.char, 'aura_of_protection') || dist(al, t) > 2) continue;
+      best = Math.max(best, Math.max(1, mod(al.char, 'cha')));
+    }
+    return best;
+  }
+
+  /** Conditions some features make a creature immune to. */
+  conditionBlocked(t: Combatant, id: ConditionId): string | null {
+    const T = t.char;
+    const auraFrom = (feat: string) => [t, ...this.alliesOf(t)].find((al) => al.char.hp > 0 && hasFeature(al.char, feat) && dist(al, t) <= 2);
+    if (id === 'frightened') {
+      const p = auraFrom('aura_of_courage');
+      if (p) return `${p.char.name}’s Aura of Courage`;
+      if (hasCondition(T, 'raging') && hasFeature(T, 'mindless_rage')) return 'Mindless Rage';
+    }
+    if (id === 'charmed') {
+      const p = auraFrom('aura_of_devotion');
+      if (p) return `${p.char.name}’s Aura of Devotion`;
+      if (hasCondition(T, 'raging') && hasFeature(T, 'mindless_rage')) return 'Mindless Rage';
+      if (hasFeature(T, 'thought_shield')) return 'Thought Shield';
+    }
+    return null;
+  }
+
+  /** Movement cost of entering a square for this creature. */
+  stepCost(c: Combatant | undefined, x: number, y: number): number {
+    if (!tile(this.tileChar(x, y)).difficult) return 1;
+    return c && hasFeature(c.char, 'lands_stride') ? 1 : 2;
+  }
+
+  /** Wild Aether surge table. */
+  private wildSurge(c: Combatant): void {
+    const ch = c.char;
+    const roll = rollDie(6);
+    this.log(`Wild Surge! The Aether answers ${ch.name} in a voice not quite their own…`, 'phase');
+    switch (roll) {
+      case 1: { const h = heal(ch, rollDice('2d6').total); this.events.push({ type: 'heal', targetId: c.id, amount: h }); this.log(`Warm light knits ${ch.name}’s wounds (+${h} HP).`); break; }
+      case 2: {
+        this.log('A ring of grey fire bursts outward!');
+        for (const t of this.combatants.filter((x) => !x.removed && x.char.hp > 0 && x.id !== c.id && dist(x, c) <= 1)) this.dealDamage(c, t, [{ amount: rollDice('2d6').total, type: 'fire' }], false);
+        break;
+      }
+      case 3: this.addCondition(c, c, 'invisible', 1); break;
+      case 4: for (const al of this.alliesInRange(c, 6)) this.addCondition(c, al, 'blessed', 2); break;
+      case 5: ch.tempHp = Math.max(ch.tempHp, rollDice('2d10').total); this.log(`${ch.name} is wrapped in crackling half-reality (temporary HP).`); break;
+      default: { const e = this.enemiesOf(c).sort((a, b) => dist(a, c) - dist(b, c))[0]; if (e) { this.log(`A bolt of raw Aether leaps to ${e.char.name}!`); this.dealDamage(c, e, [{ amount: rollDice('1d10').total, type: 'force' }], false); } }
+    }
   }
 
   // ─────────────────────────── Items

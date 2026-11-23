@@ -10,6 +10,8 @@ export interface ShopDef {
   sellMult: number;
   /** Flags that improve prices (each -10%). */
   discountFlags: string[];
+  /** Faction whose reputation affects prices (default: hollowmere). */
+  faction?: string;
 }
 
 export const SHOPS: ShopDef[] = [

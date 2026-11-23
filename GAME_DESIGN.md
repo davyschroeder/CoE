@@ -128,3 +128,41 @@ Weapons (simple/martial, properties: finesse, light, heavy, two-handed, versatil
 ## 9. Presentation
 
 Canvas rendering of procedural tiles, tokens, lighting tints, glows and floating combat text; DOM UI with a parchment/dark-stone/bronze/aether palette; procedural SVG portraits; tooltips explaining rules everywhere; procedural WebAudio music per mood and sound effects; fullscreen toggle; UI strings localisable (English + partial Dutch) — narrative content is English and keyed by stable ids for future content packs.
+
+## 10. Phase 3 systems (v0.2)
+
+### Class features, levels 6–10
+| Class | New mechanics |
+|---|---|
+| Fighter | Indomitable (L9, reroll a failed save, 1/long rest). Vanguard: Remarkable Athlete (L7, +½ prof to STR/DEX/CON checks and initiative), Relentless (L10, self-heal below half HP). Bulwark: Guardian's Aura (L7, adjacent allies +1 AC), Steadfast (L10, advantage vs fear/charm). |
+| Rogue | Expertise II (L6, two more skills). Nightblade: Deadly Ambush (L9, +2d6 vs creatures that haven't acted). Veil-Thief: Supreme Sneak (L9, advantage on Stealth). |
+| Barbarian | Feral Instinct (L7, advantage on initiative), Brutal Critical (L9). Unbroken: Mindless Rage (L6, immune to charm/fear while raging). Ancestors: Spirit Shield (L6, reaction −2d6 damage to an ally). |
+| Paladin | Aura of Protection (L6, +CHA to saves within 2 squares), Aura of Courage (L10). Lantern: Aura of Devotion (L7). Iron Vow: Relentless Avenger (L7, opportunity hits slow). |
+| Ranger | Roving (L6, +1 speed), Land's Stride (L8, ignore difficult terrain), Nature's Veil (L10, bonus-action invisibility). Hunter: Escape the Horde (L7). Fogwalker: Iron Mind (L7, WIS save proficiency). |
+| Cleric | Hearth: Blessed Healer (L6), Divine Strike (L8). Lantern: Improved Flare (L6, protect allies), Potent Spellcasting (L8). |
+| Wizard | Evoker: Potent Cantrip (L6), Empowered Evocation (L10). Resonance: Resonant Ward (L6, temp HP on casting), Probability Mastery (L10). |
+| Bard | Countercharm (L6), Magical Secrets (L10, two spells from any list). Lore: Additional Magical Secrets (L6). Valor: Extra Attack (L6); Combat Inspiration now adds the die to damage. |
+| Warlock | Repelling Blast (L5). Hollow Choir: Entropic Ward (L6), Thought Shield (L10). Ember Court: Ember's Own Luck (L6, +1d10 to a failed save), Fiendish Resilience (L10). |
+| Sorcerer | Wild Surge now real (d20 ≤ 2 on levelled spells → one of six surges). Wild: Bend Luck (L6, +1d4 to an ally's failed save). Ember: Ember Ward (L6). Empowered Spell (L10, reroll damage). |
+
+Saving throws in combat go through one routine (`Combat.save`) that applies auras, Countercharm, Steadfast, Ember's Own Luck, Bend Luck and Indomitable in that order. Condition immunities from auras/rage/Thought Shield are checked in `conditionBlocked`.
+
+### Spells (levels 2–5)
+Aid, Web, Blindness; Spirit Guardians (a concentration aura that damages enemies starting their turn within 3 squares), Hypnotic Pattern (charm + incapacitate, ends on damage), Fear, Slow, Vampiric Touch (drain), Conjure Barrage; Ice Storm, Blight, Banishment (target untouchable while banished), Greater Invisibility (does not end on attacking), Death Ward; Cone of Cold, Mass Cure Wounds, Hold Monster, Flame Strike, Destructive Wave (spares allies), Synaptic Static, Greater Restoration. Conditions can now be flagged *ends on damage*.
+
+CPU casters prepare spells by score (their signature spells, spell level, healing/area/control value) and the AI values auras as sustained damage worth stepping into the fight for.
+
+### Monsters
+New templates ready for Act I: Thornwake Warden (pulling vines, healing sap), Gloam Stalker (pack hunter, venom), Iron Covenant Soldier (reach), Conclave Arcanist (fire, webs, shield ward), Echo Knight (memory-edged blade), and **Ossaryx, the Gloaming Wyrm** (Dusk Breath with recharge, Frightful Presence, **legendary actions** between other creatures' turns: Tail Sweep, Wing Buffet). Any encounter enemy can be marked **elite** (+50% HP, +1 AC, +1 proficiency, double XP). Templates declare **recharge** resources and **loot tables**/gold dice; drops are rolled on victory.
+
+### Crafting
+Ten recipes at camp (potions, antitoxin, elixirs, Aether Draughts, oil flasks, cleric scrolls, and three crafted magic items: Echo-Ward Charm, Bellsong Pendant, Fogweave Cloak). The best party member for the recipe's skill makes the check; failure salvages half the materials (none on a failure by 5+). Wizards can copy wizard-spell scrolls into their spellbook (Arcana DC 10 + level, 50 gp per level).
+
+### Factions
+Five major factions plus Hollowmere, with leaders, seat, ideology, strengths, flaws, internal divisions and relations from the story bible. Reputation tiers: Hostile ≤ −40, Wary ≤ −10, Neutral, Trusted ≥ 15, Allied ≥ 50. Merchants belong to a faction (default Hollowmere): Wary +15%, Trusted −10%, Allied −20%, Hostile refuses to trade. Content can test `rep:<faction>>=N` or `reptier:<faction>=Trusted`.
+
+### Reactions
+Reactions stay automatic (combat resolution is synchronous and must stay deterministic for the AI and tests), but your own character follows your **reaction preferences** (Party → Your reactions): Shield always / below half HP / never; opportunity attacks always / never; defensive features automatic / never. Saved in the game (save format v2).
+
+### Companion personal quests and conflicts
+Each companion has a first personal quest (`cq_<id>`, category *companion*). When the companion travels with you and their conditions are met (trust, story progress), a **✦ A personal matter…** button appears at camp. When two companions who clash are both in the party, camp shows their argument and you can step in; your mediation changes their bond and their trust in you. Content lives in `src/data/companionQuests.ts` and is merged into the quest, dialogue, map, encounter and item registries.

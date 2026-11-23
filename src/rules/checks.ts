@@ -66,6 +66,7 @@ export function skillCheck(c: Character, skill: Skill, dc?: number, o: RollOpts 
   if (hasCondition(c, 'poisoned') || hasCondition(c, 'frightened')) dis++;
   if (skill === 'athletics' && hasCondition(c, 'raging')) adv++;
   if (skill === 'survival' && hasFeature(c, 'natural_explorer')) adv++;
+  if (skill === 'stealth' && hasFeature(c, 'supreme_sneak')) adv++;
   if (skill === 'stealth' && c.equipment.body && ['chain_mail', 'scale_mail', 'splint_armor'].includes(c.equipment.body)) dis++;
   const mode = resolveMode(adv, dis);
   const r = d20WithLuck(c, mode, o.forcedRolls);

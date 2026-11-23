@@ -3,6 +3,7 @@
  */
 import type { GameState } from './types';
 import { activeCompanionIds, activeParty, hasItem, player, timeOfDay } from './state';
+import { repTier } from '../data/factions';
 
 type Tok = { t: 'atom'; v: string } | { t: 'op'; v: '&&' | '||' | '!' | '(' | ')' };
 
@@ -74,6 +75,7 @@ function value(s: GameState, key: string): number | string | boolean {
     case 'diff': return s.difficulty === parts[1];
     case 'visited': return !!s.maps[parts[1]];
     case 'rep': return s.factions[parts[1]] ?? 0;
+    case 'reptier': return repTier(s.factions[parts[1]] ?? 0);
     case 'talked': return !!s.companions[parts[1]]?.talksDone.includes(parts[2]);
     default:
       if (REL_DIMS.includes(head)) {

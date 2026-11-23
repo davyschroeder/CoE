@@ -231,3 +231,16 @@ label.check { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
   .hud-party, .cb-party { width: 150px; }
   .title { font-size: 3.5rem; }
 }
+
+/* Phase 3: crafting, factions, camp conflicts */
+.recipe-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; margin: 8px 0; }
+.recipe { padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; } .recipe.missing { opacity: 0.6; }
+.recipe .btn { align-self: flex-start; margin-top: 4px; }
+.factions { display: flex; flex-direction: column; gap: 8px; } .faction { padding: 10px 12px; }
+.f-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.tier { font-size: 0.8rem; padding: 1px 8px; border-radius: 10px; border: 1px solid #555; }
+.t-hostile { color: #ff7a6b; border-color: #ff7a6b; } .t-wary { color: #ffb347; border-color: #ffb347; } .t-neutral { color: var(--muted); }
+.t-trusted { color: #7fd88a; border-color: #7fd88a; } .t-allied { color: var(--aether-2); border-color: var(--aether-2); }
+.bar.rep { height: 6px; margin: 4px 0 6px; background: #222; } .bar.rep .fill { background: linear-gradient(90deg, #a8443a, #d9c79c, #7fd88a); }
+.conflict { padding: 9px 12px; margin-bottom: 10px; display: flex; gap: 10px; align-items: center; border-color: var(--warn); }
+.btn.personal { border-color: var(--aether-2); color: #fff; background: linear-gradient(180deg, #3d3270, #241d4a); }

@@ -141,6 +141,16 @@ export function bestPlan(cb: Combat, c: Combatant): Plan | null {
 
   for (const a of actions) {
     const cost = slotCost(cb, c, a, p);
+    // Auras such as Spirit Guardians: worth moving into the fight for.
+    if (a.special === 'spirit_guardians') {
+      if (c.concentration) continue;
+      const foes = cb.enemiesOf(c);
+      for (const pos of positions.filter((q) => foes.some((f) => dist(f, q) <= 3)).sort((x, y) => x.cost - y.cost).slice(0, 10)) {
+        const n = foes.filter((f) => dist(f, pos) <= 3).length;
+        plans.push({ score: n * 9 + 2 - cost - pos.risk - exposure(cb, c, pos.x, pos.y, p) * 0.5, moveTo: pos, actionId: a.id, label: a.name });
+      }
+      continue;
+    }
     // Self-targeted actions
     if (a.target === 'self' && !a.area) {
       const s = scoreSelf(cb, c, a, p);
@@ -212,6 +222,7 @@ function scoreSelf(cb: Combat, c: Combatant, a: ActionDef, p: Personality): numb
     case 'action_surge': return cb.enemiesOf(c).some((e) => dist(e, c) <= 6) ? 5 : 0;
     case 'rage': return enemiesNear > 0 || cb.enemiesOf(c).some((e) => dist(e, c) <= c.movement + 1) ? 6 : 0;
     case 'dash': return 0; // handled by approach logic
+    case 'spirit_guardians': return c.concentration ? 0 : cb.enemiesOf(c).filter((e) => dist(e, c) <= 3).length * 3 + cb.enemiesOf(c).filter((e) => dist(e, c) <= 6).length;
     case 'quicken': return 0;
     default:
       if (a.id === 'dodge') return hpFrac < 0.3 && enemiesNear >= 2 ? 3 * p.caution : 0;
@@ -265,6 +276,7 @@ function scoreTargeted(cb: Combat, c: Combatant, a: ActionDef, t: Combatant, p: 
       const amount = a.heal ? averageDice(a.heal.dice) + (a.heal.mod ? spellMod(ch) : 0) : 10;
       return Math.min(missing, amount) * 0.5 * (1.4 - frac) * (0.5 + p.support * 1.5);
     }
+    if (a.special === 'aid') return cb.round <= 2 && cb.enemiesOf(c).length >= 2 ? 3 + p.support * 2 : 0;
     if (a.removeConditions) return t.char.conditions.some((k) => a.removeConditions!.includes(k.id)) ? 4 * (0.5 + p.support) : 0;
     if (a.condition) {
       if (hasCondition(t.char, a.condition.id)) return 0;
@@ -317,6 +329,7 @@ function scoreTargeted(cb: Combat, c: Combatant, a: ActionDef, t: Combatant, p: 
 /** Execute one step of the AI's turn. Returns events, or null when the AI is done. */
 export function aiStep(cb: Combat, c: Combatant): CombatEvent[] | null {
   if (cb.over || c.char.hp <= 0) return null;
+  if (hasCondition(c.char, 'stunned') || hasCondition(c.char, 'incapacitated')) return null;
   // Boss scripts first
   const script = bossScript(cb, c);
   if (script) return script;
@@ -328,6 +341,9 @@ export function aiStep(cb: Combat, c: Combatant): CombatEvent[] | null {
       if (path && cb.pathCost(path) <= c.movement) ev.push(...cb.moveAlong(c, path));
       if (c.char.hp <= 0 || cb.over) return ev;
     }
+    // The world may have changed while moving (opportunity attacks, phase changes): re-validate.
+    const act = ACTION_BY_ID[plan.actionId!];
+    if (!act || !cb.canUse(c, act).ok) return ev.length ? ev : null;
     try {
       ev.push(...cb.perform(c, plan.actionId!, plan.target));
     } catch {
@@ -381,8 +397,8 @@ function bossScript(cb: Combat, c: Combatant): CombatEvent[] | null {
   if (ch.templateId === 'bellwarden' && c.action) {
     const res = ch.combatResources ?? {};
     const near = cb.enemiesOf(c).filter((e) => dist(e, c) <= 5).length;
-    if (res.summon && cb.alive('enemy').length <= 2 && (cb.round >= 2 || cb.phase === 2)) return cb.perform(c, 'm_summon_echo');
-    if (res.toll && near >= 2) return cb.perform(c, 'm_toll', { x: c.x, y: c.y });
+    if (res.summon && cb.alive('enemy').length <= 2 && (cb.round >= 2 || cb.phase === 2) && cb.canUse(c, ACTION_BY_ID.m_summon_echo).ok) return cb.perform(c, 'm_summon_echo');
+    if (res.toll && near >= 2 && cb.canUse(c, ACTION_BY_ID.m_toll).ok) return cb.perform(c, 'm_toll', { x: c.x, y: c.y });
   }
   if (ch.templateId === 'echo_sentinel' && c.action && ch.combatResources?.beam) {
     let bestAim: { x: number; y: number } | null = null, bestN = 1;
@@ -392,7 +408,7 @@ function bossScript(cb: Combat, c: Combatant): CombatEvent[] | null {
       const n = cb.enemiesOf(c).filter((t) => tiles.some((q) => q.x === t.x && q.y === t.y)).length;
       if (n > bestN) { bestN = n; bestAim = { x: e.x, y: e.y }; }
     }
-    if (bestAim) return cb.perform(c, 'm_sentinel_beam', bestAim);
+    if (bestAim && cb.canUse(c, a).ok) return cb.perform(c, 'm_sentinel_beam', bestAim);
   }
   return null;
 }

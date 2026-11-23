@@ -2,7 +2,7 @@
 
 A single-player, D&D-inspired fantasy role-playing game for the browser. You create one adventurer and travel with **three CPU-controlled companions** who have their own opinions, tactics and memories, guided by an in-game **Dungeon Master engine**. Original world, original story, d20 rules.
 
-> **Current build: v0.1 — the complete, playable Prologue ("The Bell That Never Rang").**
+> **Current build: v0.2 — the complete, playable Prologue ("The Bell That Never Rang") plus the Phase 3 systems: class features to level 10, spells to 5th level, crafting, factions, companion personal quests and conflicts, legendary monsters.**
 > Acts I–VI are designed (see `STORY_BIBLE.md`) but **not yet implemented**. See `DEVELOPMENT_STATUS.md` for exactly what works.
 
 ## Requirements
@@ -38,7 +38,7 @@ The build in `dist/` is fully static (relative paths), so it can be opened from 
 | Click a person or object, or Space/Enter when adjacent | Talk / inspect / open / loot |
 | F | Search the area (active Perception/Investigation) |
 | R | Short rest |
-| J / I / C / P / M / L | Journal / Inventory / Character / Party orders / World map / Dice log |
+| J / I / C / P / M / L | Journal (quests & factions) / Inventory / Character / Party orders & reaction preferences / World map / Dice log |
 | F5 / F9 | Quicksave / Quickload |
 | Mouse wheel | Zoom |
 | Esc | Menu / close window |
@@ -52,6 +52,8 @@ The build in `dist/` is fully static (relative paths), so it can be opened from 
 | Right-click / Esc | Cancel the selected action |
 | Space | End turn |
 | ⚑ Orders | Give companions strategic instructions |
+
+Camp (the stairs in the Lantern & Lamb) offers private talks, companions' personal quests (✦ A personal matter…), mediating companion arguments, crafting, spell preparation and long rests.
 
 In dialogue, number keys pick options. At party decisions you can **Ask the party** (each companion argues for an option) or **Let us vote**.
 

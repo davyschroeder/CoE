@@ -1,5 +1,6 @@
 import type { MapDef } from './types';
 import { GRIDS } from './grids';
+import { CQ_OBJECTS } from '../companionQuests';
 
 const FESTIVAL = '!bell_rang';
 const NIGHT = 'bell_rang';
@@ -164,4 +165,5 @@ export const VAULT: MapDef = {
 };
 
 export const MAPS: MapDef[] = [HOLLOWMERE, INN, CATHEDRAL, UNDERCROFT, VAULT];
+for (const { map, object } of CQ_OBJECTS) MAPS.find((m) => m.id === map)?.objects.push(object);
 export const MAP_BY_ID: Record<string, MapDef> = Object.fromEntries(MAPS.map((m) => [m.id, m]));

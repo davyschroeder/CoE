@@ -3,6 +3,7 @@ import { ITEM_BY_ID } from '../data/items';
 import type { GameState } from './types';
 import { addItem, removeItem, addLog } from './state';
 import { evalCond } from './conditions';
+import { repTier, tierPriceDelta } from '../data/factions';
 
 function stockKey(shop: string, item: string) { return `_sold_${shop}_${item}`; }
 
@@ -16,9 +17,14 @@ export function shopStock(s: GameState, shop: ShopDef): { itemId: string; qty: n
 export function priceMult(s: GameState, shop: ShopDef): number {
   let m = shop.buyMult;
   for (const f of shop.discountFlags) if (s.flags[f]) m -= 0.1;
-  const rep = s.factions.hollowmere ?? 0;
-  m -= Math.min(0.15, Math.max(-0.15, rep / 200));
+  const delta = tierPriceDelta(repTier(s.factions[shop.faction ?? 'hollowmere'] ?? 0));
+  m += delta ?? 0;
   return Math.max(0.5, m);
+}
+
+/** A merchant whose faction is hostile to the party refuses to trade. */
+export function refusesTrade(s: GameState, shop: ShopDef): boolean {
+  return tierPriceDelta(repTier(s.factions[shop.faction ?? 'hollowmere'] ?? 0)) === null;
 }
 
 export function buyPrice(s: GameState, shop: ShopDef, itemId: string): number {
@@ -33,6 +39,7 @@ export function sellPrice(_s: GameState, shop: ShopDef, itemId: string): number 
 
 export function buy(s: GameState, shopId: string, itemId: string): string | null {
   const shop = SHOP_BY_ID[shopId];
+  if (refusesTrade(s, shop)) return 'The merchant refuses to deal with you.';
   const entry = shopStock(s, shop).find((e) => e.itemId === itemId);
   if (!entry) return 'Out of stock.';
   if (s.gold < entry.price) return 'Not enough gold.';

@@ -89,6 +89,7 @@ export function speed(c: Character): number {
   const body = c.equipment.body ? ITEM_BY_ID[c.equipment.body] : undefined;
   if (body?.armor?.strReq && abilityScore(c, 'str') < body.armor.strReq && c.ancestry !== 'dwarf') s -= 2;
   if (c.feats.includes('mobile')) s += 2;
+  if (hasFeature(c, 'roving')) s += 1;
   for (const item of equippedItems(c)) s += item.bonus?.speed ?? 0;
   if (hasCondition(c, 'slowed')) s = Math.floor(s / 2);
   if (hasCondition(c, 'restrained') || hasCondition(c, 'stunned') || hasCondition(c, 'incapacitated')) s = 0;
@@ -105,7 +106,7 @@ export function skillBonus(c: Character, s: Skill): number {
   const ab = SKILL_ABILITY[s];
   let b = mod(c, ab);
   if (c.skillProfs.includes(s)) b += prof(c) * (c.expertise.includes(s) ? 2 : 1);
-  else if (hasFeature(c, 'jack_of_all_trades')) b += Math.floor(prof(c) / 2);
+  else if (hasFeature(c, 'jack_of_all_trades') || (hasFeature(c, 'remarkable_athlete') && ['str', 'dex', 'con'].includes(ab))) b += Math.floor(prof(c) / 2);
   for (const item of equippedItems(c)) b += item.bonus?.skills?.[s] ?? 0;
   if (s === 'perception' && c.feats.includes('observant')) b += 0; // passive only
   return b;
@@ -113,13 +114,13 @@ export function skillBonus(c: Character, s: Skill): number {
 
 export function abilityCheckBonus(c: Character, a: Ability): number {
   let b = mod(c, a);
-  if (hasFeature(c, 'jack_of_all_trades')) b += Math.floor(prof(c) / 2);
+  if (hasFeature(c, 'jack_of_all_trades') || (hasFeature(c, 'remarkable_athlete') && (a === 'str' || a === 'dex' || a === 'con'))) b += Math.floor(prof(c) / 2);
   return b;
 }
 
 export function saveBonus(c: Character, a: Ability): number {
   let b = mod(c, a);
-  const profSave = c.saveProfs.includes(a) || (a === 'con' && c.feats.includes('resilient'));
+  const profSave = c.saveProfs.includes(a) || (a === 'con' && c.feats.includes('resilient')) || (a === 'wis' && hasFeature(c, 'iron_mind'));
   if (profSave) b += prof(c);
   for (const item of equippedItems(c)) b += item.bonus?.saves ?? 0;
   return b;
@@ -129,6 +130,7 @@ export function initiativeBonus(c: Character): number {
   let b = mod(c, 'dex');
   if (c.feats.includes('alert')) b += 5;
   if (hasFeature(c, 'dread_ambusher')) b += mod(c, 'wis');
+  if (hasFeature(c, 'remarkable_athlete')) b += Math.floor(prof(c) / 2);
   for (const item of equippedItems(c)) b += item.bonus?.initiative ?? 0;
   return b;
 }
@@ -322,8 +324,11 @@ export function learnableSpells(c: Character): ActionDef[] {
 export function resourceMax(c: Character, id: string): number {
   const cha = Math.max(1, mod(c, 'cha'));
   switch (id) {
-    case 'second_wind': case 'action_surge': case 'challenging_shout': case 'probability_twist': case 'choir_whispers': case 'arcane_recovery':
+    case 'second_wind': case 'action_surge': case 'challenging_shout': case 'choir_whispers': case 'arcane_recovery':
+    case 'indomitable': case 'entropic_ward': case 'embers_luck':
       return 1;
+    case 'probability_twist': return hasFeature(c, 'probability_mastery') ? 2 : 1;
+    case 'natures_veil': return prof(c);
     case 'channel_divinity': return c.level >= 6 ? 2 : 1;
     case 'favored_foe': return prof(c);
     case 'lay_on_hands': return 5 * c.level;
@@ -386,6 +391,8 @@ export function resistances(c: Character): DamageType[] {
   anc?.resist?.forEach((r) => out.add(r as DamageType));
   for (const item of equippedItems(c)) item.bonus?.resist?.forEach((r) => out.add(r));
   if (hasCondition(c, 'raging') || hasCondition(c, 'guarded')) ['bludgeoning', 'piercing', 'slashing'].forEach((r) => out.add(r as DamageType));
+  if (hasFeature(c, 'thought_shield')) out.add('psychic');
+  if (hasFeature(c, 'fiendish_resilience') || hasFeature(c, 'ember_ward')) out.add('fire');
   return [...out];
 }
 
@@ -500,6 +507,10 @@ export interface LevelChoices {
   newSpells?: string[];
   newCantrips?: string[];
   fightingStyle?: string;
+  /** Skills gaining expertise (rogue level 6). */
+  expertise?: Skill[];
+  /** Spells from any class list (Magical Secrets). */
+  secretSpells?: string[];
 }
 
 export function canLevelUp(c: Character): boolean {
@@ -522,6 +533,24 @@ export function needsFightingStyle(c: Character, nextLevel: number): boolean {
 }
 
 /** How many new spells/cantrips a known-caster or wizard gains at the next level. */
+/** Number of Magical Secrets picks gained at the next level. */
+export function secretsGain(c: Character): number {
+  const next = c.level + 1;
+  let n = 0;
+  if (c.classId === 'bard' && next === 10) n += 2;
+  if (c.classId === 'bard' && c.subclassId === 'lore' && next === 6) n += 2;
+  return n;
+}
+
+export function expertiseGain(c: Character): number {
+  return c.classId === 'rogue' && c.level + 1 === 6 ? 2 : 0;
+}
+
+/** Spells of any class up to a level (for Magical Secrets). */
+export function anyClassSpells(maxLevel: number): ActionDef[] {
+  return Object.values(ACTION_BY_ID).filter((a) => a.kind === 'spell' && (a.level ?? 0) <= maxLevel && (a.level ?? 0) > 0);
+}
+
 export function spellGains(c: Character): { cantrips: number; spells: number } {
   const cls = CLASS_BY_ID[c.classId];
   if (!cls || cls.caster === 'none') return { cantrips: 0, spells: 0 };
@@ -546,12 +575,16 @@ export function applyLevelUp(c: Character, ch: LevelChoices): void {
     if (ch.feat === 'resilient') c.abilities.con = Math.min(20, c.abilities.con + 1);
     if (ch.feat === 'observant') c.abilities.wis = Math.min(20, c.abilities.wis + 1);
   }
-  for (const s of [...(ch.newCantrips ?? []), ...(ch.newSpells ?? [])]) if (!c.knownSpells.includes(s)) c.knownSpells.push(s);
+  for (const s of [...(ch.newCantrips ?? []), ...(ch.newSpells ?? []), ...(ch.secretSpells ?? [])]) if (!c.knownSpells.includes(s)) c.knownSpells.push(s);
+  for (const sk of ch.expertise ?? []) if (c.skillProfs.includes(sk) && !c.expertise.includes(sk)) c.expertise.push(sk);
   const cls = CLASS_BY_ID[c.classId];
   if (cls?.id === 'cleric' || cls?.id === 'paladin') autoKnowFullList(c);
   if (cls && !cls.prepares) c.preparedSpells = c.knownSpells.filter((id) => (ACTION_BY_ID[id]?.level ?? 0) > 0);
-  else if (cls?.prepares) {
-    // Auto-prepare newly learned spells while there is room.
+  else if (cls?.prepares && c.kind === 'companion') {
+    // CPU companions re-prepare: their signature spells first, then the strongest, keeping a healing option.
+    c.preparedSpells = companionPreparation(c);
+  } else if (cls?.prepares) {
+    // The player keeps their choices; newly learned spells are added while there is room.
     for (const id of c.knownSpells) {
       if ((ACTION_BY_ID[id]?.level ?? 0) > 0 && !c.preparedSpells.includes(id) && c.preparedSpells.length < preparedLimit(c)) c.preparedSpells.push(id);
     }
@@ -560,6 +593,15 @@ export function applyLevelUp(c: Character, ch: LevelChoices): void {
   c.maxHp = computeMaxHp(c);
   c.hp += c.maxHp - oldMax;
   syncResources(c);
+}
+
+/** Spell preparation for a CPU companion: preferred spells, then highest level, always some healing. */
+export function companionPreparation(c: Character): string[] {
+  const preferred = c.companionId ? COMPANION_BY_ID[c.companionId]?.spells ?? [] : [];
+  const max = maxSpellLevel(c);
+  const levelled = c.knownSpells.map((id) => ACTION_BY_ID[id]).filter((a) => a && (a.level ?? 0) > 0 && (a.level ?? 0) <= max);
+  const score = (a: ActionDef) => (preferred.includes(a.id) ? 15 : 0) + (a.level ?? 0) * 10 + (a.tags.includes('heal') ? 8 : 0) + (a.tags.includes('aoe') ? 5 : 0) + (a.tags.includes('damage') ? 5 : 0) + (a.tags.includes('control') ? 4 : 0);
+  return levelled.sort((a, b) => score(b) - score(a)).slice(0, preparedLimit(c)).map((a) => a.id);
 }
 
 /** Sensible automatic choices for CPU companions (and for "auto level" in the UI). */
@@ -583,6 +625,15 @@ export function autoLevelChoices(c: Character): LevelChoices {
     ch.newSpells = pool.filter((s) => (s.level ?? 0) > 0 && !c.knownSpells.includes(s.id))
       .sort((a, b) => rank(a.id) - rank(b.id) || (b.level ?? 0) - (a.level ?? 0)).slice(0, gains.spells).map((s) => s.id);
   }
+  const secrets = secretsGain(c);
+  if (secrets) {
+    const maxL = Math.max(1, maxSpellLevel({ ...c, level: next } as Character));
+    const taken = new Set([...c.knownSpells, ...(ch.newSpells ?? [])]);
+    ch.secretSpells = anyClassSpells(maxL).filter((sp) => !taken.has(sp.id) && !sp.classes?.includes(c.classId))
+      .sort((a, b) => (b.level ?? 0) - (a.level ?? 0) || (b.tags.includes('heal') ? 1 : 0) - (a.tags.includes('heal') ? 1 : 0)).slice(0, secrets).map((sp) => sp.id);
+  }
+  const exp = expertiseGain(c);
+  if (exp) ch.expertise = c.skillProfs.filter((sk) => !c.expertise.includes(sk)).sort((a, b) => skillBonus(c, b) - skillBonus(c, a)).slice(0, exp);
   return ch;
 }
 
@@ -590,25 +641,25 @@ export function autoLevelChoices(c: Character): LevelChoices {
 
 let enemyCounter = 0;
 
-export function createEnemy(templateId: string, opts: { hpMult?: number; echoTouched?: boolean; idSuffix?: string } = {}): Character {
+export function createEnemy(templateId: string, opts: { hpMult?: number; echoTouched?: boolean; idSuffix?: string; elite?: boolean } = {}): Character {
   const t = ENEMY_BY_ID[templateId];
   if (!t) throw new Error(`Unknown enemy ${templateId}`);
-  const hp = Math.max(1, Math.round(rollDice(t.hp).total * (opts.hpMult ?? 1))) + (opts.echoTouched ? 5 : 0);
+  const hp = Math.max(1, Math.round(rollDice(t.hp).total * (opts.hpMult ?? 1) * (opts.elite ? 1.5 : 1))) + (opts.echoTouched ? 5 : 0);
   enemyCounter++;
   const c: Character = {
     id: `${templateId}_${opts.idSuffix ?? enemyCounter}`,
-    name: opts.echoTouched ? `Echo-Touched ${t.name}` : t.name,
+    name: `${opts.elite ? 'Elite ' : ''}${opts.echoTouched ? 'Echo-Touched ' : ''}${t.name}`,
     kind: 'enemy', templateId, ancestry: 'none', classId: 'none', background: 'none',
-    level: t.level, monsterLevel: t.level, xp: 0,
+    level: t.level, monsterLevel: t.level + (opts.elite ? 4 : 0), xp: 0,
     abilities: { ...t.abilities }, skillProfs: ['perception'], expertise: [], saveProfs: [],
     maxHp: hp, hp, tempHp: 0, hitDice: 0, equipment: {}, spellSlotsUsed: new Array(10).fill(0),
     knownSpells: [], preparedSpells: [], resources: {}, feats: [], conditions: [],
     deathSaves: { successes: 0, failures: 0 }, dead: false, stable: false,
     portrait: { hue: 0, sigil: t.glyph, initials: t.glyph, style: 1 },
-    naturalArmor: t.ac, speedOverride: t.speed, actions: [...t.actions],
+    naturalArmor: t.ac + (opts.elite ? 1 : 0), speedOverride: t.speed, actions: [...t.actions],
     resistances: [...(t.resist ?? []), ...(opts.echoTouched ? ['psychic' as DamageType] : [])],
     vulnerabilities: [...(t.vuln ?? [])], immunities: [...(t.immune ?? [])], conditionImmunities: [...(t.condImmune ?? [])],
-    xpValue: t.xp, aiProfile: t.ai, traits: [...(t.traits ?? []), ...(opts.echoTouched ? ['echo_touched'] : [])],
+    xpValue: Math.round(t.xp * (opts.elite ? 2 : 1)), aiProfile: t.ai, traits: [...(t.traits ?? []), ...(opts.echoTouched ? ['echo_touched'] : []), ...(opts.elite ? ['elite'] : [])],
     creatureType: t.type, multiattack: t.multiattack, combatResources: { ...(t.resources ?? {}) },
   };
   return c;

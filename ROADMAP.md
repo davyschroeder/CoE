@@ -10,16 +10,20 @@ Project (Vite + TypeScript + Vitest), main menu, character creation, dice engine
 Hollowmere (festival and fog), the inn, the Cathedral of Saint Orlen, the undercroft, the Anchor vault; 12 encounters, the Bellwarden boss, the Seeker finale; five quests (main + four side quests with branching outcomes); companion dialogue, banter and camp talks; ending that unlocks Act I.
 **Criteria:** a scripted end-to-end test completes the prologue through the real engine and survives save/load (`tests/prologue.e2e.test.ts`); content-integrity tests pass.
 
-## Phase 3 — Deeper RPG systems (next)
-- [ ] Level 6–20 class features beyond the current set; more spells of levels 3–9 (fireball etc. exist; many do not); multiclassing (optional)
-- [ ] Prepared-spell swapping UX in camp (exists via character sheet) + spell scrolls copying for wizards
-- [ ] More enemies and elite variants; legendary actions for late bosses
-- [ ] Crafting with materials (echo shards, fog essence, cores)
-- [ ] Companion personal quests (stage 1 for all ten), companion–companion conflicts with consequences
-- [ ] Faction reputation tiers with gated content and merchant changes
-- [ ] Reaction choices for the player (opt-in prompt instead of automatic)
-- [ ] Code-splitting the bundle (currently ~800 kB)
-**Criteria:** each feature tested; balance simulation re-run (`GAME_DESIGN.md` §5).
+## Phase 3 — Deeper RPG systems ✅ (v0.2)
+- [x] Class features to level 10 for all ten classes and specialisations (auras, Indomitable, Brutal Critical, Land's Stride, Magical Secrets, Expertise II, Potent Cantrip, Empowered Evocation, Wild Surge…)
+- [x] 22 new spells of levels 2–5 incl. persistent auras (Spirit Guardians), Death Ward, Greater Invisibility, Hypnotic Pattern, Banishment, Cone of Cold
+- [x] Smarter CPU spell preparation and AI support for the new options (auras, Aid, control spells)
+- [x] Six Act I-ready enemies incl. Ossaryx with legendary actions; elite variants; recharge abilities; loot tables
+- [x] Crafting with materials (10 recipes) + wizards copying scrolls into their spellbook
+- [x] Faction overview with reputation tiers (Hostile → Allied), merchant pricing/refusal, `reptier:` conditions
+- [x] Reaction preferences for the player character (Shield, opportunity attacks, defensive features); save format v2 with migration
+- [x] Companion personal quests (stage 1 for all ten) and companion–companion conflicts with consequences
+- [x] Code-split bundle (engine/UI, data, dialogue chunks)
+- [ ] Class features 11–20 beyond progression (deferred to the acts that reach those levels)
+- [ ] Spells of levels 6–9; summons; terrain-shaping spells
+- [ ] Multiclassing (optional)
+- [ ] Interactive reaction prompts (current design: preferences, because combat resolution is synchronous)
 
 ## Phase 4 — Act I: Whispers of the Veil
 Whispering Woods, ruins of Valdros, Ashenford; recruitment of the remaining seven companions; Sister Maren's betrayal (or its absence if she forgot Elsa); Ossaryx, the Gloaming Wyrm; consequences of every prologue choice (Lira, Corvin, Ysolt, the Grey Hawks, rescued townsfolk).

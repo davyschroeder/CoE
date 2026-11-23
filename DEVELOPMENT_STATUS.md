@@ -1,6 +1,6 @@
 # Development Status
 
-_Last updated: build v0.1 (Phase 1 + Phase 2 complete)._
+_Last updated: build v0.2 (Phases 1–3 complete)._
 
 This file is the source of truth for **what actually works**. Anything not listed as implemented is not in the game yet.
 
@@ -8,7 +8,8 @@ This file is the source of truth for **what actually works**. Anything not liste
 
 | Area | Status |
 |---|---|
-| Project, build, tests | ✅ Vite + TypeScript (strict) + Vitest; `npm test` runs 37 tests incl. an end-to-end prologue playthrough |
+| Project, build, tests | ✅ Vite + TypeScript (strict) + Vitest; `npm test` runs the full suite incl. an end-to-end prologue playthrough |
+| Phase 3 systems | ✅ Class features 6–10, 22 new spells (levels 2–5), legendary/elite/recharge monsters + loot, crafting, factions, reaction preferences, companion quests & conflicts, code splitting — see `GAME_DESIGN.md` §10 |
 | Prologue "The Bell That Never Rang" | ✅ Fully playable start to finish; ends by unlocking Act I (chapter flag + epilogue summary) |
 | Acts I–VI | ❌ Designed in `STORY_BIBLE.md` only. World map shows their regions as locked |
 
@@ -65,24 +66,34 @@ This file is the source of truth for **what actually works**. Anything not liste
 
 Manual checks done in Chromium (Playwright): main menu, character creation (rogue, cleric, fighter), opening scene, exploration & movement, NPC dialogue with skill check roll card, all HUD panels, a full fog-hound combat (player casting + companion AI), camp & a companion conversation, the Bellwarden arena. No console errors.
 
+## Phase 3 additions (v0.2)
+
+- **Class features 6–10** for every class and specialisation, all mechanically implemented (previously data-only features Indomitable, Combat Inspiration and Wild Surge now work too). Rogue Expertise II and bard Magical Secrets are chosen in the level-up screen.
+- **22 new spells** (levels 2–5) incl. Spirit Guardians aura, Hypnotic Pattern (ends on damage), Banishment, Greater Invisibility, Death Ward; smarter CPU spell preparation; AI support for auras and Aid.
+- **Monsters:** 6 Act I-ready templates (incl. Ossaryx with legendary actions and recharging breath), elite variants for any encounter, recharge abilities, loot tables & gold drops shown on the victory screen.
+- **Crafting** at camp (10 recipes, 3 new crafted magic items) and **scroll copying** for wizards.
+- **Factions** tab in the journal (5 factions + Hollowmere, tiers Hostile→Allied), faction-aligned merchant prices, hostile merchants refuse to trade, `reptier:` conditions.
+- **Reaction preferences** for your character (Party screen); save format **v2** with automatic migration from v1.
+- **Companion quests & conflicts:** see the section below.
+- **Bundle split** into engine/UI, data and dialogue chunks (no chunk-size warning).
+- Fixed along the way: CPU actions are re-validated after moving (a boss stunned mid-move by a phase change could otherwise act); bosses' scripted abilities check legality.
+
 ## Known limitations / honest notes
 
 - **Only the prologue is content-complete.** After the epilogue you can keep wandering Hollowmere, but Act I is not built.
-- Some class features beyond level 5 are progression-only (HP/slots/ASIs) without their full feature text implemented; level cap in the prologue is ~3–4.
-- Spell list stops at 3rd level and lacks many classic utility spells; summons and terrain-altering spells are not implemented.
-- Defensive reactions are automatic (no player prompt).
-- Faction reputation is tracked and affects Hollowmere prices, but faction questlines/tiers are not yet implemented.
+- Class features beyond level 10 are progression-only (HP/slots/ASIs/extra attacks); the prologue party reaches level ~3–4, so most Phase 3 features are exercised by tests and will matter from Act I on.
+- Spells stop at 5th level; summons and terrain-altering spells are not implemented.
+- Reactions are not prompted interactively; your character follows the reaction preferences you set.
+- Faction tiers affect prices and conditions; faction questlines begin in Act I. The new Act I monsters (incl. Ossaryx) are not yet placed in story encounters.
 - Companion personal quests are hooks/foreshadowing only (camp talks); multi-stage companion quests start in Act I.
 - Romance is limited to optional hints in camp talks.
 - Combat arenas use the exploration map; very large maps may produce wide arenas.
 - Audio is procedural and simple; there are no recorded music/voice assets.
 - Dutch localisation covers only the main UI strings; all narrative text is English.
-- JS bundle ~800 kB (not code-split yet).
 
 ## Next development priority
 
-1. Phase 3 systems: specialisation features to level 10, more spells (2nd–5th), crafting, faction tiers, player-prompted reactions, code splitting.
-2. Act I content (see `ROADMAP.md`), starting with Hollowmere aftermath and the Whispering Woods, carrying over all prologue flags.
+1. Act I content (Phase 4) (see `ROADMAP.md`), starting with Hollowmere aftermath and the Whispering Woods, carrying over all prologue flags.
 
 ## Continuity notes for future sessions
 

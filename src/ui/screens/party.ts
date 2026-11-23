@@ -24,6 +24,10 @@ export function openParty(app: App, after?: () => void): void {
         toggle('Protect the weakest member', 'Tanks guard the most wounded ally and target enemies threatening them.', o.protectWeakest, (v) => (o.protectWeakest = v)),
         toggle('Save your strongest abilities', 'Companions prefer cantrips and basic attacks unless things get dangerous.', o.conserve, (v) => (o.conserve = v)),
         toggle('Use stealth', 'Move quietly: halves random encounters and lets you try to sneak past or ambush enemies (group Stealth check).', o.stealth, (v) => (o.stealth = v)),
+        h('h4', null, 'Your reactions (your own character)'),
+        reactionRow('Shield spell', ['auto', 'lowhp', 'never'], ['Always when it would help', 'Only below half HP', 'Never'], o.reactions.shield, (v) => { o.reactions.shield = v as any; render(); }),
+        reactionRow('Opportunity attacks', ['always', 'never'], ['Always', 'Never (let them go)'], o.reactions.opportunity, (v) => { o.reactions.opportunity = v as any; render(); }),
+        reactionRow('Defensive features (Warding Flare, Uncanny Dodge…)', ['auto', 'never'], ['Automatic', 'Never'], o.reactions.defensive, (v) => { o.reactions.defensive = v as any; render(); }),
         toggle('Avoid unnecessary combat', 'Companions will favour talking, sneaking and retreat options when they suggest plans.', o.avoidCombat, (v) => (o.avoidCombat = v))),
       h('div', { class: 'rel-list' }, activeCompanionIds(s).map((id) => {
         const d = COMPANION_BY_ID[id], cs = s.companions[id];
@@ -38,6 +42,11 @@ export function openParty(app: App, after?: () => void): void {
   };
   render();
   modal('Party', root, { wide: true, onClose: () => { after?.(); app.explore?.refresh(); } });
+}
+
+function reactionRow(label: string, values: string[], labels: string[], cur: string, set: (v: string) => void): HTMLElement {
+  return h('div', { class: 'set-row' }, h('span', null, label), h('select', { onchange: (e: Event) => set((e.target as HTMLSelectElement).value) },
+    values.map((v, i) => h('option', { value: v, selected: v === cur }, labels[i]))));
 }
 
 function bondWord(v: number): string {

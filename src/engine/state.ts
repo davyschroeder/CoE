@@ -7,7 +7,7 @@ import { ACTION_BY_ID } from '../data/actions';
 import { canLevelUp, createCharacter, equippedItems } from './character';
 import { uid } from '../core/util';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 export const START_MINUTE = 18 * 60; // 6 pm, first evening of the festival's last night
 
 export interface NewGameOptions {
@@ -43,7 +43,7 @@ export function newCompanionState(id: string, inParty: boolean): CompanionState 
 }
 
 export function defaultOrders(): PartyOrders {
-  return { stance: 'initiative', avoidCombat: false, protectWeakest: false, conserve: false, stealth: false };
+  return { stance: 'initiative', avoidCombat: false, protectWeakest: false, conserve: false, stealth: false, reactions: { shield: 'auto', opportunity: 'always', defensive: 'auto' } };
 }
 
 export function newGame(o: NewGameOptions): GameState {

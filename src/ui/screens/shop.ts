@@ -2,7 +2,7 @@ import type { App } from '../app';
 import { h, modal, clear, toast } from '../dom';
 import { SHOP_BY_ID } from '../../data/shops';
 import { ITEM_BY_ID, RARITY_COLORS } from '../../data/items';
-import { buy, sell, shopStock, sellPrice } from '../../engine/shop';
+import { buy, sell, shopStock, sellPrice, refusesTrade } from '../../engine/shop';
 import { itemTip } from './inventory';
 import { sfx } from '../../audio/audio';
 
@@ -10,6 +10,7 @@ export function openShop(app: App, shopId: string): void {
   const s = app.state!;
   const shop = SHOP_BY_ID[shopId];
   if (!shop) { toast('This merchant has nothing to sell.', 'bad'); return; }
+  if (refusesTrade(s, shop)) { toast(`${shop.name} refuses to deal with you.`, 'bad'); return; }
   const root = h('div', { class: 'shop' });
   const render = () => {
     clear(root);

@@ -100,4 +100,6 @@ export const QUESTS: QuestDef[] = [
   },
 ];
 
+import { CQ_QUESTS } from './companionQuests';
+QUESTS.push(...CQ_QUESTS);
 export const QUEST_BY_ID: Record<string, QuestDef> = Object.fromEntries(QUESTS.map((q) => [q.id, q]));

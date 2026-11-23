@@ -21,7 +21,7 @@ export type ConditionId =
   | 'blinded' | 'invisible' | 'incapacitated'
   // beneficial / class states
   | 'blessed' | 'raging' | 'dodging' | 'hidden' | 'inspired' | 'hexed' | 'marked'
-  | 'shielded' | 'resonant' | 'burning' | 'slowed' | 'disengaged' | 'guarded' | 'reckless' | 'surprised';
+  | 'shielded' | 'resonant' | 'burning' | 'slowed' | 'disengaged' | 'guarded' | 'reckless' | 'surprised' | 'deathward';
 
 export interface ActiveCondition {
   id: ConditionId;
@@ -33,6 +33,8 @@ export interface ActiveCondition {
   /** Tied to the source's concentration. */
   concentration?: boolean;
   value?: number; // e.g. inspiration die, hex damage
+  /** Ends as soon as the bearer takes damage (Hypnotic Pattern, Turn Undead). */
+  endsOnDamage?: boolean;
 }
 
 export type EquipSlot = 'mainHand' | 'offHand' | 'body' | 'cloak' | 'amulet' | 'ring1' | 'ring2';
@@ -150,6 +152,8 @@ export interface PartyOrders {
   protectWeakest: boolean;
   conserve: boolean;
   stealth: boolean;
+  /** How your own character uses reactions (CPU companions decide for themselves). */
+  reactions: { shield: 'auto' | 'lowhp' | 'never'; opportunity: 'always' | 'never'; defensive: 'auto' | 'never' };
 }
 
 export interface LogEntry { t: number; kind: 'dm' | 'speech' | 'system' | 'roll' | 'combat' | 'reaction'; text: string; speaker?: string; }

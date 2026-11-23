@@ -16,6 +16,7 @@
  *   skill:arcana             player is proficient in the skill
  *   trust:seris>=20          relationship dimension (trust|respect|affection|agreement|fear)
  *   bond:kael:vaelis>=10     companion-to-companion bond
+ *   rep:conclave>=15         faction reputation               reptier:unbound=Trusted (Hostile|Wary|Neutral|Trusted|Allied)
  *   res>=1                   current Aether Resonance          resunlocked
  *   time:night               time of day (dawn|day|dusk|night)
  *   chapter:prologue         current chapter

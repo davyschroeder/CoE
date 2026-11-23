@@ -126,6 +126,10 @@ export const ITEMS: ItemDef[] = [
   { id: 'fog_essence', name: 'Fog Essence', type: 'material', rarity: 'common', value: 10, weight: 0, stackable: true, desc: 'Grey mist that refuses to leave its vial. Alchemists pay for it.' },
   { id: 'bone_dust', name: 'Ossuary Dust', type: 'component', rarity: 'common', value: 4, weight: 0, stackable: true, desc: 'Fine grey powder. Useful in certain rites.' },
   { id: 'silver_bell_clapper', name: 'Bronze Clapper Fragment', type: 'material', rarity: 'rare', value: 100, weight: 2, desc: 'A piece of the Bellwarden\'s bell. It is warm, and it remembers ringing.' },
+  // ── Crafted items (Phase 3)
+  { id: 'echo_ward_charm', name: 'Echo-Ward Charm', type: 'amulet', rarity: 'rare', value: 300, weight: 0, desc: 'A Sentinel core re-tuned to hum against the Unwritten. +1 to saving throws; resistance to psychic damage.', bonus: { saves: 1, resist: ['psychic'] } },
+  { id: 'bellsong_pendant', name: 'Bellsong Pendant', type: 'amulet', rarity: 'rare', value: 350, weight: 0, desc: 'A sliver of the Bellwarden’s bronze. +1 to spell attack rolls and spell save DCs.', bonus: { spellAttack: 1, spellDC: 1 } },
+  { id: 'fogweave_cloak', name: 'Fogweave Cloak', type: 'cloak', rarity: 'uncommon', value: 180, weight: 1, desc: 'Never quite stops being somewhere else. +1 AC, +2 Stealth.', bonus: { ac: 1, skills: { stealth: 2 } } },
   // ── Quest items
   { id: 'maren_key', name: 'Maren\'s Iron Key', type: 'quest', rarity: 'common', value: 0, weight: 0, quest: true, desc: 'An old iron key to the cathedral\'s sacristy, given to you by Sister Maren.' },
   { id: 'bell_rubbing', name: 'Charcoal Rubbing of the Bell', type: 'quest', rarity: 'common', value: 0, weight: 0, quest: true, desc: 'A rubbing of an inscription in Old Ithari: "I ring for the town that remembers me."' },
@@ -137,6 +141,8 @@ export const ITEMS: ItemDef[] = [
   { id: 'vault_sigil', name: 'Vault Sigil-Stone', type: 'quest', rarity: 'uncommon', value: 0, weight: 1, quest: true, desc: 'A hexagonal stone carved with the seven-pointed star of the Scribes.' },
 ];
 
+import { CQ_ITEMS } from './companionQuests';
+ITEMS.push(...CQ_ITEMS);
 export const ITEM_BY_ID: Record<string, ItemDef> = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
 
 export const RARITY_COLORS: Record<Rarity, string> = {
