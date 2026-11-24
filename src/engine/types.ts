@@ -42,7 +42,14 @@ export const EQUIP_SLOTS: EquipSlot[] = ['mainHand', 'offHand', 'body', 'cloak',
 
 export interface Resource { max: number; used: number; recharge: 'short' | 'long'; }
 
-export interface Portrait { hue: number; sigil: string; initials: string; style: number; }
+export interface Portrait {
+  hue: number;
+  sigil: string;
+  initials: string;
+  style: number;
+  /** Stable cosmetic artwork key. Optional so existing saves remain valid. */
+  art?: string;
+}
 
 export interface Character {
   id: string;

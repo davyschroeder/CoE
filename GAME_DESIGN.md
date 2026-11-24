@@ -127,7 +127,7 @@ Weapons (simple/martial, properties: finesse, light, heavy, two-handed, versatil
 
 ## 9. Presentation
 
-Canvas rendering of procedural tiles, tokens, lighting tints, glows and floating combat text; DOM UI with a parchment/dark-stone/bronze/aether palette; procedural SVG portraits; tooltips explaining rules everywhere; procedural WebAudio music per mood and sound effects; fullscreen toggle; UI strings localisable (English + partial Dutch) — narrative content is English and keyed by stable ids for future content packs.
+Exploration and combat share one isometric Canvas renderer (`src/ui/render/`): a 2:1 diamond projection with inverse mapping for mouse input, depth-sorted terrain, buildings assembled from map footprints, painted scenery and materials, painted miniatures, animated light, water, smoke and combat feedback, and a pannable, zoomable camera. Portraits are painted (16 player choices; every companion has a face of their own; NPCs map to named or archetype portraits) with procedural fallbacks. DOM UI with the Aetherfall theme (parchment/dark-stone/bronze/aether palette); tooltips explaining rules everywhere; procedural WebAudio music per mood and sound effects; fullscreen toggle. The game is English-only; UI strings stay keyed in `src/i18n/` so a later language pack remains possible. Details: `docs/ISOMETRIC_EDITION.md`.
 
 ## 10. Phase 3 systems (v0.2)
 

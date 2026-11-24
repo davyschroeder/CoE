@@ -13,13 +13,13 @@ import { newGame } from '../../engine/state';
 import { addItem } from '../../engine/state';
 import { rollDie } from '../../core/dice';
 import { signed } from '../../core/util';
-import { portraitSvg } from '../portraits';
+import { charPortrait, companionPortrait, portraitCardSvg, PLAYER_PORTRAITS, DEFAULT_PLAYER_PORTRAIT } from '../portraits';
 import { sfx } from '../../audio/audio';
 
 const TRAITS = ['Brave', 'Curious', 'Cautious', 'Honest', 'Sly', 'Kind', 'Proud', 'Pious', 'Sceptical', 'Hot-headed', 'Patient', 'Witty', 'Melancholy', 'Ambitious', 'Loyal', 'Restless'];
 
 interface Draft {
-  name: string; hue: number; appearance: string;
+  name: string; hue: number; appearance: string; art: string;
   ancestry: string; classId: string; background: string; style: string;
   abilityMode: 'pointbuy' | 'array' | 'roll';
   base: Record<Ability, number>;
@@ -37,7 +37,7 @@ export class CreationScreen implements Screen {
   el: HTMLElement;
   private step = 0;
   private d: Draft = {
-    name: '', hue: 200, appearance: '', ancestry: 'human', classId: 'fighter', background: 'soldier', style: 'style_defense',
+    name: '', hue: 200, appearance: '', art: DEFAULT_PLAYER_PORTRAIT, ancestry: 'human', classId: 'fighter', background: 'soldier', style: 'style_defense',
     abilityMode: 'pointbuy', base: { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 }, pool: [...STANDARD_ARRAY], assign: {},
     skills: [], expertise: [], cantrips: [], spells: [], traits: [], motivation: '', companions: [],
     difficulty: 'adventurer', permadeath: false, limitedRest: false,
@@ -167,16 +167,29 @@ export class CreationScreen implements Screen {
 
   private stepIdentity(): HTMLElement {
     const d = this.d;
-    const preview = h('div', { class: 'portrait-big', html: portraitSvg({ hue: d.hue, sigil: CLASS_BY_ID[d.classId].sigil, initials: (d.name || '?').slice(0, 2).toUpperCase(), size: 140 }) });
-    return h('div', { class: 'cgrid two' },
-      h('div', null,
-        h('label', null, 'Name'),
-        h('input', { class: 'text', value: d.name, maxlength: 24, placeholder: 'e.g. Aldren Vey', oninput: (e: Event) => { d.name = (e.target as HTMLInputElement).value; preview.innerHTML = portraitSvg({ hue: d.hue, sigil: CLASS_BY_ID[d.classId].sigil, initials: (d.name || '?').slice(0, 2).toUpperCase(), size: 140 }); } }),
-        h('label', null, 'Portrait colour'),
-        h('input', { type: 'range', min: 0, max: 359, value: d.hue, oninput: (e: Event) => { d.hue = +(e.target as HTMLInputElement).value; preview.innerHTML = portraitSvg({ hue: d.hue, sigil: CLASS_BY_ID[d.classId].sigil, initials: (d.name || '?').slice(0, 2).toUpperCase(), size: 140 }); } }),
-        h('label', null, 'Appearance (optional)'),
-        h('textarea', { class: 'text', rows: 3, placeholder: 'Weathered cloak, a scar through one eyebrow...', oninput: (e: Event) => { d.appearance = (e.target as HTMLTextAreaElement).value; } }, d.appearance)),
-      h('div', { class: 'center' }, preview, h('p', { class: 'muted' }, 'Your portrait is a procedural medallion; its colour and initials are yours to choose.')));
+    const title = h('h2', { class: 'hero-name-preview' }, d.name || 'Your story begins here');
+    const selected = PLAYER_PORTRAITS.find(p => p.id === d.art) ?? PLAYER_PORTRAITS[0];
+    return h('div', { class: 'identity-layout' },
+      h('div', { class: 'identity-form' },
+        h('div', { class: 'creation-eyebrow' }, 'CHAPTER ZERO · THE ADVENTURER'),
+        h('label', { for: 'adventurer-name' }, 'Your name'),
+        h('input', { id: 'adventurer-name', class: 'text', value: d.name, maxlength: 24, placeholder: 'e.g. Aldren Vey', oninput: (e: Event) => { d.name = (e.target as HTMLInputElement).value; title.textContent = d.name || 'Your story begins here'; } }),
+        h('label', { for: 'adventurer-appearance' }, 'Appearance and distinguishing features (optional)'),
+        h('textarea', { id: 'adventurer-appearance', class: 'text', rows: 2, placeholder: 'A weathered cloak, a silver ring, a scar through one eyebrow…', oninput: (e: Event) => { d.appearance = (e.target as HTMLTextAreaElement).value; } }, d.appearance),
+        h('div', { class: 'portrait-gallery-head' }, h('h3', null, 'Choose your portrait'), h('span', { class: 'muted small' }, `${PLAYER_PORTRAITS.length} illustrated faces`)),
+        h('p', { class: 'muted small' }, 'Your portrait is cosmetic. Choose your ancestry, class and abilities in the next steps.'),
+        h('div', { class: 'portrait-gallery', role: 'group', 'aria-label': 'Choose a character portrait' },
+          PLAYER_PORTRAITS.map(p => h('button', {
+            type: 'button', class: `portrait-choice ${p.id === d.art ? 'selected' : ''}`, 'aria-label': p.name,
+            'aria-pressed': String(p.id === d.art), title: p.name,
+            onclick: () => { d.art = p.id; sfx('click'); this.render(); },
+          }, h('div', { class: 'portrait-choice-art', html: portraitCardSvg(p.id, 100) }), h('span', null, p.name)))),
+        h('label', { for: 'adventurer-hue' }, 'Portrait frame and token accent'),
+        h('input', { id: 'adventurer-hue', type: 'range', min: 0, max: 359, value: d.hue, 'aria-label': 'Portrait frame and token accent', oninput: (e: Event) => { d.hue = +(e.target as HTMLInputElement).value; } })),
+      h('aside', { class: 'hero-preview panel' },
+        h('div', { class: 'hero-portrait-stage', html: portraitCardSvg(d.art, 280) }),
+        h('div', { class: 'hero-preview-caption' }, h('div', { class: 'creation-eyebrow' }, selected.name.toUpperCase()), title,
+          h('p', { class: 'muted' }, 'One adventurer. Three companions. A world that remembers your choices.'))));
   }
 
   private stepAncestry(): HTMLElement {
@@ -305,15 +318,14 @@ export class CreationScreen implements Screen {
     return h('div', { class: 'cgrid two' },
       h('div', null, h('p', null, `Choose exactly three companions (${d.companions.length}/3). They are controlled by the computer, with their own opinions and tactics.`),
         h('div', { class: 'pick-grid comp' }, COMPANIONS.map((c) => {
-          const cls = CLASS_BY_ID[c.classId];
           return this.card(c.name, `${c.title} — ${c.blurb}`, d.companions.includes(c.id), () => {
             if (d.companions.includes(c.id)) d.companions = d.companions.filter((x) => x !== c.id);
             else if (d.companions.length < 3) d.companions.push(c.id);
             else toast('You can only bring three. Deselect someone first.', 'bad');
-          }, h('div', { class: 'mini-portrait', html: portraitSvg({ hue: c.hue, sigil: cls.sigil, initials: c.name.split(' ').map((p) => p[0]).join(''), size: 44, companionId: c.id }) }));
+          }, h('div', { class: 'mini-portrait', html: companionPortrait(c.id, 60) }));
         }))),
       h('div', { class: 'detail panel' },
-        h('h3', null, focus.name), h('div', { class: 'muted' }, focus.title),
+        h('div', { class: 'companion-detail-head' }, h('div', { html: companionPortrait(focus.id, 104) }), h('div', null, h('h3', null, focus.name), h('div', { class: 'muted' }, focus.title))),
         h('p', null, focus.bio),
         h('p', null, h('b', null, 'Personality: '), focus.personality),
         h('p', null, h('b', null, 'Philosophy: '), focus.philosophy),
@@ -342,7 +354,7 @@ export class CreationScreen implements Screen {
     const ch = this.buildCharacter();
     const cls = CLASS_BY_ID[ch.classId];
     return h('div', { class: 'cgrid two' },
-      h('div', { class: 'center' }, h('div', { class: 'portrait-big', html: portraitSvg({ hue: this.d.hue, sigil: cls.sigil, initials: ch.name.slice(0, 2).toUpperCase(), size: 140 }) }),
+      h('div', { class: 'center' }, h('div', { class: 'portrait-big', html: charPortrait(ch, 180) }),
         h('h2', null, ch.name), h('div', null, `${ANCESTRY_BY_ID[ch.ancestry].name} ${cls.name} — ${BACKGROUND_BY_ID[ch.background].name}`)),
       h('div', { class: 'detail panel' },
         h('p', null, ABILITIES.map((a) => `${a.toUpperCase()} ${ch.abilities[a]} (${signed(abilityMod(ch.abilities[a]))})`).join(' · ')),
@@ -360,7 +372,7 @@ export class CreationScreen implements Screen {
       id: 'player', name: d.name.trim() || 'Wanderer', kind: 'player', ancestry: d.ancestry, classId: d.classId, background: d.background,
       baseAbilities: this.baseScores(), skills: d.skills, expertise: d.expertise, cantrips: d.cantrips, spells: d.spells,
       fightingStyle: d.style || undefined, personality: d.traits.join(', '), motivation: d.motivation, appearance: d.appearance,
-      portrait: { hue: d.hue, sigil: CLASS_BY_ID[d.classId].sigil, initials: (d.name.trim() || 'Wa').slice(0, 2).toUpperCase(), style: 0 },
+      portrait: { hue: d.hue, sigil: CLASS_BY_ID[d.classId].sigil, initials: (d.name.trim() || 'Wa').slice(0, 2).toUpperCase(), style: 0, art: d.art },
     });
     if (CLASS_BY_ID[d.classId].prepares && d.classId !== 'wizard') ch.preparedSpells = ch.preparedSpells.slice(0, preparedLimit(ch));
     return ch;

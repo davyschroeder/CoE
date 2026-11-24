@@ -31,12 +31,12 @@ export class MainMenu implements Screen {
           btn(t('menu.settings'), () => openSettings(app)),
           btn(t('menu.credits'), () => credits()),
           btn(t('menu.fullscreen'), () => toggleFullscreen())),
-        h('div', { class: 'menu-foot' }, 'Aetherfall Visual Edition · An original fantasy RPG · Offline. Use F11 or Fullscreen for a wider view.')),
+        h('div', { class: 'menu-foot' }, 'Aetherfall Isometric Edition · An original fantasy RPG · Fully local play. Use F11 or Fullscreen for a wider view.')),
       h('div', { class: 'coa-menu-mark' }, h('strong', null, 'Every choice becomes legend'), 'An original fantasy adventure'));
   }
 
   mount(): void {
-    // The visual edition replaces the animated backdrop with painted art (and hides the canvas).
+    // The painted menu replaces the original procedural backdrop.
     if (getComputedStyle(this.canvas).display === 'none') return;
     const ctx = this.canvas.getContext('2d')!;
     const lanterns = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), s: 0.4 + Math.random(), v: 0.0002 + Math.random() * 0.0005, hue: [40, 20, 200, 280][Math.floor(Math.random() * 4)], ph: Math.random() * 6 }));
@@ -79,6 +79,6 @@ function credits(): void {
     h('p', null, h('b', null, 'Chronicles of Aether: The Shattered Veil')),
     h('p', null, 'An original fantasy role-playing game inspired by tabletop d20 play. All setting, characters and text are original.'),
     h('p', null, 'Design, writing and code: built iteratively with Claude Code for the project owner.'),
-    h('p', null, 'Aetherfall visual edition (title art, companion portraits, the map of Elyndra and the interface theme): made with ChatGPT for the project owner. Maps and tiles are drawn procedurally; audio is generated at runtime.'),
+    h('p', null, 'Isometric Edition: painted character portraits and miniatures, layered isometric environments, illustrated scenery and atmospheric effects. All artwork is packaged locally. Audio is generated at runtime.'),
     h('p', null, 'Rules: an original d20 system using openly reusable tabletop mechanics (ability scores, proficiency, advantage).'))));
 }

@@ -9,7 +9,7 @@ import { CLASS_BY_ID } from '../../data/classes';
 import { ITEM_BY_ID } from '../../data/items';
 import {
   getMap, tileAt, isPassable, findPath, stepTo, visibleTiles, updateExplored, decodeExplored, objectsAt, isObjectKnown,
-  lootContainer, attemptLock, disarmTrap, search, lighting, instability, knownTrapTiles, music, resolveList, type StepEvent,
+  lootContainer, attemptLock, disarmTrap, search, lighting, instability, knownTrapTiles, music, resolveList, activeGrid, type StepEvent,
 } from '../../engine/exploration';
 import { activeParty, addLog, clockString, mapRuntime, player, recordRoll, resonanceMax, hasItem } from '../../engine/state';
 import { maybeBanter, maybeIdleRemark, fillName } from '../../engine/companionMind';
@@ -18,7 +18,9 @@ import { skillBonus, canLevelUp, passivePerception } from '../../engine/characte
 import { skillCheck } from '../../rules/checks';
 import { evalCond } from '../../engine/conditions';
 import { saveGame } from '../../engine/save';
-import { drawTile, drawToken, glow, lightingTint } from '../render/tiles';
+import { glow, lightingTint } from '../render/tiles';
+import { createIsoView, isoPoint, isoTileAt, drawIsoGround, drawIsoProp, drawIsoHighlight, drawIsoToken, drawIsoBuilding, hasIsoProp, isoElevation, type IsoView } from '../render/isometric';
+import { mapArchitecture } from '../render/mapArchitecture';
 import { charPortrait } from '../portraits';
 import { playMusic, sfx } from '../../audio/audio';
 import { settings } from '../../core/settings';
@@ -43,7 +45,16 @@ export class ExploreScreen implements Screen {
   private partyBox: HTMLElement;
   private topBar: HTMLElement;
   private logBox: HTMLElement;
-  private tileSize = 40;
+  private tileSize = 76;
+  private panX = 0;
+  private panY = 0;
+  private showGrid = false;
+  private drag: { x: number; y: number; ox: number; oy: number } | null = null;
+  private actors = new Map<string, { x: number; y: number; facing: number }>();
+  private lastFrameTime = 0;
+  private hitActors: { x: number; y: number; w: number; h: number; tileX: number; tileY: number }[] = [];
+  private bindPointerEvents: (() => void) | null = null;
+  private removePointerEvents: (() => void) | null = null;
   private trail: { x: number; y: number }[] = [];
   private path: { x: number; y: number }[] = [];
   private pendingInteract: MapObject | null = null;
@@ -58,7 +69,7 @@ export class ExploreScreen implements Screen {
   private lastLogLen = 0;
 
   constructor(private app: App) {
-    this.canvas = h('canvas', { class: 'map-canvas' });
+    this.canvas = h('canvas', { class: 'map-canvas', 'aria-label': 'Isometric exploration map. Click to walk or interact. Right-drag to pan; scroll to zoom.', role: 'img' });
     this.ctx = this.canvas.getContext('2d')!;
     this.partyBox = h('div', { class: 'hud-party' });
     this.topBar = h('div', { class: 'hud-top panel' });
@@ -77,16 +88,41 @@ export class ExploreScreen implements Screen {
         btn(t('hud.rest'), 'R', () => this.doShortRest()),
         btn(t('hud.dice'), 'L', () => openDiceLog(app)),
         btn(t('hud.save'), 'F5', () => openSaveLoad(app, 'save'), 'Save game (F5 = quicksave)'),
-        btn(t('hud.menu'), 'Esc', () => this.openMenu())));
+        btn(t('hud.menu'), 'Esc', () => this.openMenu())),
+      h('div', { class: 'board-controls panel' },
+        h('span', { class: 'board-label' }, 'ISOMETRIC VIEW'),
+        h('button', { class: 'icon-btn', title: 'Zoom out', 'aria-label': 'Zoom out', onclick: () => this.zoom(-8) }, '−'),
+        h('button', { class: 'icon-btn', title: 'Zoom in', 'aria-label': 'Zoom in', onclick: () => this.zoom(8) }, '+'),
+        h('button', { class: 'btn small ghost', title: 'Center on the party (Home)', onclick: () => this.centerCamera() }, 'Center'),
+        h('button', { class: 'btn small ghost board-grid-toggle', title: 'Show or hide the movement grid (G)', onclick: () => this.toggleGrid(), 'aria-pressed': 'false' }, 'Grid')),
+      h('div', { class: 'board-hint' }, 'Click to explore · Right-drag to look around · Scroll to zoom'));
+
     this.canvas.addEventListener('click', (e) => this.onClick(e));
     this.canvas.addEventListener('mousemove', (e) => this.onMove(e));
-    this.canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.tileSize = Math.max(24, Math.min(64, this.tileSize - Math.sign(e.deltaY) * 4)); }, { passive: false });
-    this.canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); this.path = []; });
+    this.canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.zoom(-Math.sign(e.deltaY) * 6, e.offsetX, e.offsetY); }, { passive: false });
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 1 || e.button === 2) { e.preventDefault(); this.drag = { x: e.clientX, y: e.clientY, ox: this.panX, oy: this.panY }; this.canvas.style.cursor = 'grabbing'; }
+    });
+    const dragMove = (e: MouseEvent) => {
+      if (!this.drag) return;
+      this.panX = this.drag.ox + e.clientX - this.drag.x;
+      this.panY = this.drag.oy + e.clientY - this.drag.y;
+    };
+    const dragEnd = () => { this.drag = null; this.canvas.style.cursor = 'default'; };
+    this.bindPointerEvents = () => {
+      window.addEventListener('mousemove', dragMove);
+      window.addEventListener('mouseup', dragEnd);
+      this.removePointerEvents = () => { window.removeEventListener('mousemove', dragMove); window.removeEventListener('mouseup', dragEnd); };
+    };
   }
 
   get s() { return this.app.state!; }
 
   mount(): void {
+    // Exploration is reused after combat; reattach its document-level drag handlers.
+    this.removePointerEvents?.();
+    this.bindPointerEvents?.();
     const s = this.s;
     const m = getMap(s.location.mapId);
     playMusic(music(s, m));
@@ -98,10 +134,12 @@ export class ExploreScreen implements Screen {
     this.raf = requestAnimationFrame(loop);
   }
 
-  unmount(): void { cancelAnimationFrame(this.raf); }
+  unmount(): void { cancelAnimationFrame(this.raf); this.drag = null; this.removePointerEvents?.(); this.removePointerEvents = null; }
 
   onMapChanged(_first: boolean): void {
     this.trail = [];
+    this.actors.clear();
+    this.panX = 0; this.panY = 0;
     this.path = [];
     this.pendingInteract = null;
     this.recomputeVisibility();
@@ -199,9 +237,11 @@ export class ExploreScreen implements Screen {
   onKey(e: KeyboardEvent): boolean | void {
     if (this.app.busy) return;
     const k = e.key.toLowerCase();
-    const dirs: Record<string, [number, number]> = { arrowup: [0, -1], w: [0, -1], arrowdown: [0, 1], s: [0, 1], arrowleft: [-1, 0], a: [-1, 0], arrowright: [1, 0], d: [1, 0], q: [-1, -1], e: [1, -1], z: [-1, 1], x: [1, 1] };
+    const dirs: Record<string, [number, number]> = { arrowup: [-1, -1], w: [-1, -1], arrowdown: [1, 1], s: [1, 1], arrowleft: [-1, 1], a: [-1, 1], arrowright: [1, -1], d: [1, -1], q: [-1, 0], e: [0, -1], z: [0, 1], x: [1, 0] };
     if (dirs[k]) { this.path = []; this.tryStep(this.s.location.x + dirs[k][0], this.s.location.y + dirs[k][1]); e.preventDefault(); return true; }
     switch (k) {
+      case 'g': this.toggleGrid(); break;
+      case 'home': this.centerCamera(); e.preventDefault(); break;
       case 'j': openJournal(this.app); break;
       case 'i': openInventory(this.app); break;
       case 'c': openCharacter(this.app); break;
@@ -222,15 +262,51 @@ export class ExploreScreen implements Screen {
     try { saveGame(this.s, 'quick'); toast('Quicksaved.', 'good'); } catch (err: any) { toast(`Save failed: ${err.message}`, 'bad'); }
   }
 
+  private view(): IsoView {
+    const v = createIsoView(this.canvas.clientWidth, this.canvas.clientHeight, this.camX, this.camY, this.tileSize, 26);
+    v.originX += this.panX - (this.canvas.clientWidth > 1000 ? 40 : 0);
+    v.originY += this.panY;
+    return v;
+  }
+
+  private centerCamera(): void {
+    this.panX = 0; this.panY = 0;
+    this.camX = this.s.location.x; this.camY = this.s.location.y;
+  }
+
+  private toggleGrid(): void {
+    this.showGrid = !this.showGrid;
+    this.el.querySelector('.board-grid-toggle')?.setAttribute('aria-pressed', String(this.showGrid));
+  }
+
+  private zoom(delta: number, px?: number, py?: number): void {
+    const before = this.view();
+    const x = px ?? this.canvas.clientWidth / 2, y = py ?? this.canvas.clientHeight / 2;
+    const u = (x - before.originX) / (before.tileWidth / 2), v = (y - before.originY) / (before.tileWidth / 4);
+    const wx = (u + v) / 2, wy = (v - u) / 2;
+    this.tileSize = Math.max(44, Math.min(132, this.tileSize + delta));
+    const after = isoPoint(wx, wy, this.view());
+    this.panX += x - after.x; this.panY += y - after.y;
+  }
+
   private screenToTile(e: MouseEvent): { x: number; y: number } {
     const r = this.canvas.getBoundingClientRect();
-    const s = this.tileSize;
-    const ox = this.canvas.width / 2 - this.camX * s - s / 2, oy = this.canvas.height / 2 - this.camY * s - s / 2;
-    return { x: Math.floor((e.clientX - r.left - ox) / s), y: Math.floor((e.clientY - r.top - oy) / s) };
+    return isoTileAt(e.clientX - r.left, e.clientY - r.top, this.view());
+  }
+
+  private interactionTile(e: MouseEvent): { x: number; y: number } {
+    const r = this.canvas.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+    // Painted miniatures extend above their base: clicking the body must select the same NPC.
+    for (let i = this.hitActors.length - 1; i >= 0; i--) {
+      const a = this.hitActors[i];
+      if (px >= a.x - a.w / 2 && px <= a.x + a.w / 2 && py >= a.y - a.h && py <= a.y) return { x: a.tileX, y: a.tileY };
+    }
+    return this.screenToTile(e);
   }
 
   private onMove(e: MouseEvent): void {
-    this.hover = this.screenToTile(e);
+    if (this.drag) return;
+    this.hover = this.interactionTile(e);
     const m = getMap(this.s.location.mapId);
     const objs = objectsAt(this.s, m, this.hover.x, this.hover.y).filter((o) => isObjectKnown(this.s, m, o) && o.kind !== 'trigger' && o.kind !== 'encounter');
     this.canvas.style.cursor = objs.length ? 'pointer' : 'default';
@@ -241,7 +317,7 @@ export class ExploreScreen implements Screen {
     if (this.app.busy) return;
     const s = this.s;
     const m = getMap(s.location.mapId);
-    const p = this.screenToTile(e);
+    const p = this.interactionTile(e);
     if (!this.isExplored(p.x, p.y)) return;
     const objs = objectsAt(s, m, p.x, p.y).filter((o) => isObjectKnown(s, m, o) && o.kind !== 'trigger' && o.kind !== 'encounter');
     const obj = objs[0];
@@ -514,86 +590,176 @@ export class ExploreScreen implements Screen {
   // ─────────────────────── Rendering
 
   private draw(time: number): void {
-    const s = this.s;
-    if (!s) return;
-    const cv = this.canvas;
-    if (cv.width !== cv.clientWidth || cv.height !== cv.clientHeight) { cv.width = cv.clientWidth; cv.height = cv.clientHeight; }
-    const ctx = this.ctx;
-    const m = getMap(s.location.mapId);
-    const ts = this.tileSize;
-    const W = m.grid[0].length, H = m.grid.length;
-    ctx.fillStyle = '#05060a';
-    ctx.fillRect(0, 0, cv.width, cv.height);
-    const ox = cv.width / 2 - this.camX * ts - ts / 2, oy = cv.height / 2 - this.camY * ts - ts / 2;
-    const bits = decodeExplored(mapRuntime(s, m.id).explored, W * H);
-    const x0 = Math.max(0, Math.floor(-ox / ts)), y0 = Math.max(0, Math.floor(-oy / ts));
-    const x1 = Math.min(W - 1, Math.ceil((cv.width - ox) / ts)), y1 = Math.min(H - 1, Math.ceil((cv.height - oy) / ts));
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const i = y * W + x;
-      if (!bits[i]) continue;
-      drawTile(ctx, tileAt(s, m, x, y), x, y, ox + x * ts, oy + y * ts, ts, m.tileset, time);
-      if (!this.visible.has(i)) { ctx.fillStyle = 'rgba(5,6,12,0.6)'; ctx.fillRect(ox + x * ts, oy + y * ts, ts, ts); }
+    const state = this.s;
+    if (!state) return;
+    const cv = this.canvas, ctx = this.ctx;
+    const width = cv.clientWidth, height = cv.clientHeight;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (cv.width !== Math.round(width * dpr) || cv.height !== Math.round(height * dpr)) { cv.width = Math.round(width * dpr); cv.height = Math.round(height * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    const backdrop = ctx.createRadialGradient(width * .5, height * .45, 40, width * .5, height * .5, Math.max(width, height));
+    backdrop.addColorStop(0, '#202b32'); backdrop.addColorStop(.65, '#101820'); backdrop.addColorStop(1, '#070d13');
+    ctx.fillStyle = backdrop; ctx.fillRect(0, 0, width, height);
+    const m = getMap(state.location.mapId), grid = activeGrid(state, m);
+    const tw = this.tileSize, view = this.view();
+    const cols = grid[0].length, rows = grid.length;
+    const bits = decodeExplored(mapRuntime(state, m.id).explored, cols * rows);
+    const architecture = mapArchitecture(m, grid);
+    const rt = mapRuntime(state, m.id);
+    const layers: { depth: number; draw: () => void }[] = [];
+    const late: (() => void)[] = [];
+    const party = activeParty(state), positions = [state.location, ...this.trail.slice(0, party.length - 1)];
+    // Spread a newly arrived party across nearby walkable squares until a trail exists.
+    // These are visual follower positions; the exploration rules still use the leader.
+    const occupied = new Set(positions.map(p => `${p.x},${p.y}`));
+    const nearby = [[1,0],[0,1],[-1,0],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+    while (positions.length < party.length) {
+      const spot = nearby.map(([dx,dy]) => ({ x: state.location.x + dx, y: state.location.y + dy }))
+        .find(p => !occupied.has(`${p.x},${p.y}`) && isPassable(state, m, p.x, p.y)
+          && !objectsAt(state, m, p.x, p.y).some(o => o.kind === 'npc' && isObjectKnown(state, m, o)));
+      const p = spot ?? { x: state.location.x, y: state.location.y };
+      positions.push(p as typeof state.location); occupied.add(`${p.x},${p.y}`);
     }
-    // Objects
-    const rt = mapRuntime(s, m.id);
-    for (const o of m.objects) {
-      if (!isObjectKnown(s, m, o) || o.kind === 'trigger' || o.kind === 'encounter') continue;
-      const i = o.y * W + o.x;
-      if (!bits[i]) continue;
-      const vis = this.visible.has(i);
-      const px = ox + o.x * ts, py = oy + o.y * ts;
-      switch (o.kind) {
-        case 'npc': if (vis) drawToken(ctx, px, py, ts, npcColor(o), o.glyph ?? '?', { ring: '#9fd3ff' }); break;
-        case 'container': if (!rt.removed.includes(o.id)) { ctx.fillStyle = '#8a6a2a'; ctx.fillRect(px + ts * 0.25, py + ts * 0.35, ts * 0.5, ts * 0.35); ctx.strokeStyle = '#e0c070'; ctx.strokeRect(px + ts * 0.25, py + ts * 0.35, ts * 0.5, ts * 0.35); } break;
-        case 'exit': for (let k = 0; k < (o.w ?? 1); k++) { ctx.fillStyle = `rgba(160,200,255,${0.25 + 0.15 * Math.sin(time / 400)})`; ctx.fillRect(px + k * ts + 4, py + 4, ts - 8, ts - 8); } break;
-        case 'trap': if (!rt.disarmed.includes(o.id)) { ctx.strokeStyle = '#ff5a4a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px + 8, py + 8); ctx.lineTo(px + ts - 8, py + ts - 8); ctx.moveTo(px + ts - 8, py + 8); ctx.lineTo(px + 8, py + ts - 8); ctx.stroke(); ctx.lineWidth = 1; } break;
-        case 'lockedDoor': if (!rt.opened.includes(o.id)) { ctx.fillStyle = '#d4a45a'; ctx.font = `${ts * 0.45}px serif`; ctx.textAlign = 'center'; ctx.fillText('🔒', px + ts / 2, py + ts * 0.65); } break;
-        case 'resonance': glow(ctx, px + ts / 2, py + ts / 2, ts * (0.25 + 0.05 * Math.sin(time / 300)), 'rgba(170,140,255,0.6)'); break;
-        case 'inspect': if (vis) { ctx.fillStyle = 'rgba(255,230,160,0.8)'; ctx.font = `bold ${ts * 0.35}px serif`; ctx.textAlign = 'center'; ctx.fillText('?', px + ts * 0.85, py + ts * 0.3); } break;
+    const dt = Math.min(60, this.lastFrameTime ? time - this.lastFrameTime : 16);
+    this.lastFrameTime = time;
+    const partyPoints: { x: number; y: number }[] = [];
+    this.hitActors = [];
+    for (let i = 0; i < party.length; i++) {
+      const c = party[i], target = positions[i];
+      const tx = target.x, ty = target.y;
+      let a = this.actors.get(c.id);
+      if (!a || Math.hypot(a.x - tx, a.y - ty) > 6) { a = { x: tx, y: ty, facing: 1 }; this.actors.set(c.id, a); }
+      const dx = tx - a.x, dy = ty - a.y;
+      if (Math.abs(dx - dy) > .01) a.facing = dx - dy < 0 ? -1 : 1;
+      const ease = 1 - Math.exp(-dt / 50);
+      a.x += dx * ease; a.y += dy * ease;
+      const p = isoPoint(a.x, a.y, view);
+      p.y -= isoElevation(tileAt(state, m, target.x, target.y), tw);
+      partyPoints.push(p);
+    }
+    const foregroundFade = (px: number, py: number, high = tw * 1.3, wide = tw * .65) =>
+      partyPoints.some(p => p.y < py + 4 && p.y > py - high && Math.abs(p.x - px) < wide) ? .34 : 1;
+
+    const facadeDoors = new Set(architecture.buildings.flatMap(b => (b.doors ?? [])
+      .filter(d => d.x === b.x + b.w - 1 || d.y === b.y + b.h - 1).map(d => d.y * cols + d.x)));
+    const chestTiles = new Set(m.objects.filter(o => o.kind === 'container' && isObjectKnown(state, m, o))
+      .map(o => o.y * cols + o.x));
+    // All surfaces first, then interleave architecture and people by map depth.
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const k = y * cols + x;
+      if (!bits[k]) continue;
+      const p = isoPoint(x, y, view);
+      if (p.x < -tw * 2 || p.x > width + tw * 2 || p.y < -tw || p.y > height + tw * 4) continue;
+      const ch = tileAt(state, m, x, y), dim = !this.visible.has(k);
+      drawIsoGround(ctx, ch, x, y, view, m.tileset, time, { dim, grid: this.showGrid });
+      if (hasIsoProp(ch) && !architecture.covered.has(k) && !facadeDoors.has(k)) {
+        const fade = foregroundFade(p.x, p.y, ch === 'T' || ch === 'L' ? tw * 2.2 : tw * 1.2);
+        const prop = ch === 'c' && chestTiles.has(k) ? 'C' : ch;
+        layers.push({ depth: x + y, draw: () => drawIsoProp(ctx, prop, x, y, view, m.tileset, time, { dim, fade }) });
       }
     }
-    // Path preview
+    for (const b of architecture.buildings) {
+      let seen = false;
+      for (let yy = b.y; yy < b.y + b.h && !seen; yy++) for (let xx = b.x; xx < b.x + b.w; xx++) if (bits[yy * cols + xx]) { seen = true; break; }
+      if (!seen) continue;
+      const left = isoPoint(b.x, b.y + b.h, view), right = isoPoint(b.x + b.w, b.y, view), front = isoPoint(b.x + b.w - .5, b.y + b.h - .5, view), back = isoPoint(b.x, b.y, view);
+      const fade = partyPoints.some(p => p.x > left.x - tw / 2 && p.x < right.x + tw / 2 && p.y <= front.y && p.y >= back.y - tw * 2) ? .30 : 1;
+      layers.push({ depth: b.x + b.w - 1 + b.y + b.h - 1, draw: () => drawIsoBuilding(ctx, b, view, time, m.tileset, fade) });
+    }
     if (this.path.length) {
-      ctx.fillStyle = 'rgba(212,178,106,0.35)';
-      for (const p of this.path) { ctx.beginPath(); ctx.arc(ox + p.x * ts + ts / 2, oy + p.y * ts + ts / 2, ts * 0.1, 0, Math.PI * 2); ctx.fill(); }
+      for (const p of this.path) drawIsoHighlight(ctx, p.x, p.y, view, 'rgba(239,197,119,.13)', 'rgba(243,206,142,.40)');
+      ctx.beginPath();
+      const start = isoPoint(state.location.x, state.location.y, view); ctx.moveTo(start.x, start.y);
+      for (const step of this.path) { const p = isoPoint(step.x, step.y, view); ctx.lineTo(p.x, p.y); }
+      ctx.strokeStyle = 'rgba(251,214,145,.72)'; ctx.setLineDash([3, 7]); ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
     }
-    // Party (followers on the trail, leader on top)
-    const party = activeParty(s);
-    const positions = [s.location, ...this.trail];
-    for (let i = party.length - 1; i >= 0; i--) {
-      const c = party[i];
-      const p = positions[Math.min(i, positions.length - 1)];
-      const off = i > 0 && i >= positions.length ? (i - positions.length + 1) * 0.25 : 0;
-      const px = ox + (p.x + off) * ts, py = oy + p.y * ts;
+    if (this.hover && this.hover.x >= 0 && this.hover.y >= 0 && this.hover.x < cols && this.hover.y < rows && bits[this.hover.y * cols + this.hover.x]) {
+      drawIsoHighlight(ctx, this.hover.x, this.hover.y, view, 'rgba(236,209,152,.15)', 'rgba(255,230,178,.9)');
+    }
+
+    for (const o of m.objects) {
+      if (!isObjectKnown(state, m, o) || o.kind === 'trigger' || o.kind === 'encounter' || !bits[o.y * cols + o.x]) continue;
+      const visible = this.visible.has(o.y * cols + o.x), p = isoPoint(o.x, o.y, view);
+      if (p.x < -tw * 2 || p.x > width + tw * 2 || p.y < -tw || p.y > height + tw * 3) continue;
+      const elev = isoElevation(tileAt(state, m, o.x, o.y), tw);
+      if (o.kind === 'npc' && visible) {
+        layers.push({ depth: o.x + o.y + .08, draw: () => {
+          drawIsoToken(ctx, p.x, p.y - elev, tw, npcColor(o), '', { npcId: o.id, role: o.name, time, selected: this.hover?.x === o.x && this.hover?.y === o.y });
+          this.hitActors.push({ x: p.x, y: p.y - elev, w: tw * .64, h: tw * 1.12, tileX: o.x, tileY: o.y });
+        } });
+      } else if (o.kind === 'container' && !rt.removed.includes(o.id) && tileAt(state, m, o.x, o.y) !== 'c') {
+        layers.push({ depth: o.x + o.y + .03, draw: () => drawIsoProp(ctx, 'C', o.x, o.y, view, m.tileset, time, { dim: !visible }) });
+      } else if (o.kind === 'exit') {
+        for (let yy = 0; yy < (o.h ?? 1); yy++) for (let xx = 0; xx < (o.w ?? 1); xx++)
+          drawIsoHighlight(ctx, o.x + xx, o.y + yy, view, `rgba(112,196,216,${.13 + .05 * Math.sin(time / 650)})`, 'rgba(171,233,231,.64)');
+        // A quiet doorway marker stays visible even when its facade faces away.
+        if (visible) late.push(() => {
+          const yy = p.y - elev - tw * .32;
+          ctx.save(); ctx.strokeStyle = '#b6e4e9'; ctx.lineWidth = 1.6;
+          ctx.fillStyle = 'rgba(13,33,43,.85)'; ctx.beginPath(); ctx.roundRect(p.x - 7, yy - 10, 14, 17, [6,6,1,1]); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(p.x - 3, yy); ctx.lineTo(p.x + 4, yy); ctx.lineTo(p.x + 1, yy - 3); ctx.moveTo(p.x + 4, yy); ctx.lineTo(p.x + 1, yy + 3); ctx.stroke(); ctx.restore();
+        });
+      } else if (o.kind === 'trap' && !rt.disarmed.includes(o.id)) {
+        drawIsoHighlight(ctx, o.x, o.y, view, 'rgba(184,60,44,.28)', '#f6866c');
+      } else if (o.kind === 'resonance' && visible) {
+        layers.push({ depth: o.x + o.y + .1, draw: () => {
+          glow(ctx, p.x, p.y - tw * .25, tw * .26, 'rgba(163,111,234,.40)');
+          ctx.strokeStyle = '#d9b2ff'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(p.x, p.y - tw * .58); ctx.lineTo(p.x + tw * .11, p.y - tw * .35); ctx.lineTo(p.x, p.y - tw * .1); ctx.lineTo(p.x - tw * .11, p.y - tw * .35); ctx.closePath(); ctx.fillStyle = '#875bca'; ctx.fill(); ctx.stroke();
+        } });
+      }
+      // Quiet visual markers replace floating question marks; names appear on hover.
+      if (visible && ['inspect', 'lockedDoor', 'container'].includes(o.kind)) {
+        late.push(() => {
+          const y = p.y - elev - tw * .23;
+          ctx.beginPath(); ctx.moveTo(p.x, y - 4); ctx.lineTo(p.x + 4, y); ctx.lineTo(p.x, y + 4); ctx.lineTo(p.x - 4, y); ctx.closePath();
+          ctx.fillStyle = o.kind === 'lockedDoor' && !rt.opened.includes(o.id) ? '#f3be6e' : '#e8d9a4'; ctx.fill();
+        });
+      }
+      if (visible && this.hover?.x === o.x && this.hover?.y === o.y) late.push(() => this.drawMapLabel(ctx, p.x, p.y - tw * (o.kind === 'npc' ? 1.12 : .65), o.name, width));
+    }
+    for (let i = 0; i < party.length; i++) {
+      const c = party[i], a = this.actors.get(c.id)!, p = partyPoints[i];
       const hue = c.companionId ? COMPANION_BY_ID[c.companionId].hue : c.portrait.hue;
-      drawToken(ctx, px, py, ts, `hsl(${hue},45%,62%)`, c.name[0], { selected: i === 0, dim: c.hp <= 0 });
+      layers.push({ depth: a.x + a.y + .12, draw: () => drawIsoToken(ctx, p.x, p.y, tw, `hsl(${hue},45%,62%)`, '', { character: c, selected: i === 0, dim: c.hp <= 0, time, facing: a.facing }) });
       const b = c.companionId ? this.bubbles.get(c.companionId) : undefined;
-      if (b && b.until > performance.now()) this.drawBubble(ctx, px + ts / 2, py - 4, b.text);
+      if (b && b.until > performance.now()) late.push(() => this.drawBubble(ctx, p.x, p.y - tw * .95, b.text));
     }
-    // Lighting
-    const tint = lightingTint(lighting(s, m));
+    layers.sort((a, b) => a.depth - b.depth).forEach(l => l.draw());
+    const tint = lightingTint(lighting(state, m));
     if (tint.alpha) {
-      const cx = ox + s.location.x * ts + ts / 2, cy = oy + s.location.y * ts + ts / 2;
-      const g = ctx.createRadialGradient(cx, cy, ts * 2, cx, cy, ts * 10);
-      g.addColorStop(0, `rgba(${tint.color},${tint.alpha * 0.4})`);
-      g.addColorStop(1, `rgba(${tint.color},${Math.min(0.85, tint.alpha * 1.6)})`);
-      ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
+      const p = isoPoint(state.location.x, state.location.y, view);
+      const light = ctx.createRadialGradient(p.x, p.y, tw * .5, p.x, p.y, tw * 8);
+      light.addColorStop(0, `rgba(${tint.color},${tint.alpha * .05})`); light.addColorStop(1, `rgba(${tint.color},${Math.min(.53, tint.alpha * .95)})`);
+      ctx.fillStyle = light; ctx.fillRect(0, 0, width, height);
     }
-    // Floating reactions
-    const now = performance.now();
-    this.floats = this.floats.filter((f) => now - f.born < 1800);
-    for (const f of this.floats) {
-      const k = (now - f.born) / 1800;
-      ctx.globalAlpha = 1 - k;
-      ctx.fillStyle = f.color; ctx.font = `bold ${ts * 0.5}px serif`; ctx.textAlign = 'center';
-      ctx.fillText(f.text, ox + f.x * ts + ts / 2, oy + f.y * ts - k * ts);
+    // Sparse fireflies for outdoor areas; deterministic positions, no gameplay RNG involved.
+    if (['town', 'forest', 'ruins'].includes(m.tileset)) {
+      for (let i = 0; i < 16; i++) {
+        const x = ((i * 297.31 + time * .009) % (width + 40)) - 20;
+        const y = ((i * 173.71) % height) + Math.sin(time / 1600 + i) * 7;
+        ctx.globalAlpha = .12 + .16 * (1 + Math.sin(time / 1000 + i));
+        ctx.fillStyle = i % 3 ? '#f8d58d' : '#b9d9db'; ctx.beginPath(); ctx.arc(x, y, 1.2, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.globalAlpha = 1;
     }
-    // Hover highlight
-    if (this.hover && bits[this.hover.y * W + this.hover.x]) {
-      ctx.strokeStyle = 'rgba(255,240,200,0.5)';
-      ctx.strokeRect(ox + this.hover.x * ts + 0.5, oy + this.hover.y * ts + 0.5, ts - 1, ts - 1);
+    late.forEach(draw => draw());
+    const now = performance.now();
+    this.floats = this.floats.filter(f => now - f.born < 1800);
+    for (const f of this.floats) {
+      const k = (now - f.born) / 1800, p = isoPoint(f.x, f.y, view);
+      ctx.globalAlpha = 1 - k; ctx.fillStyle = f.color; ctx.font = `bold ${tw * .28}px Georgia, serif`; ctx.textAlign = 'center';
+      ctx.fillText(f.text, p.x, p.y - tw * (.9 + k)); ctx.globalAlpha = 1;
     }
+  }
+
+  private drawMapLabel(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, width: number): void {
+    ctx.save(); ctx.font = '13px Georgia, serif';
+    const w = Math.min(width - 24, ctx.measureText(text).width + 26);
+    x = Math.max(w / 2 + 12, Math.min(width - w / 2 - 12, x)); y = Math.max(80, y);
+    ctx.fillStyle = 'rgba(12,20,27,.94)'; ctx.strokeStyle = '#ac8e58'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(x - w / 2, y - 23, w, 29, 3); ctx.fill(); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#f6e8c8'; ctx.fillText(text, x, y - 8, w - 14); ctx.restore();
   }
 
   private drawBubble(ctx: CanvasRenderingContext2D, x: number, y: number, text: string): void {

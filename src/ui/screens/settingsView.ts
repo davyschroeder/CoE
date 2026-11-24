@@ -26,7 +26,7 @@ export function openSettings(app: App): void {
       h('h4', null, 'Display'),
       sel('Dialogue text speed', 'textSpeed', [['instant', 'Instant'], ['fast', 'Fast'], ['normal', 'Normal']]),
       rng('Font size', 'fontScale', 0.85, 1.4, 0.05),
-      sel('Language (UI)', 'language', [['en', 'English'], ['nl', 'Nederlands (UI only, partial)']]),
+      h('div', { class: 'set-row' }, h('span', null, 'Language'), h('span', { class: 'muted' }, 'English')),
       h('h4', null, 'Audio'),
       rng('Music volume', 'musicVolume', 0, 1, 0.05),
       rng('Effects volume', 'sfxVolume', 0, 1, 0.05),

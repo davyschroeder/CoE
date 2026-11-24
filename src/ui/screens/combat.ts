@@ -7,10 +7,16 @@ import { ITEM_BY_ID } from '../../data/items';
 import { COMPANION_BY_ID } from '../../data/companions';
 import { ENEMY_BY_ID } from '../../data/enemies';
 import { tile } from '../../data/maps/tiles';
+import { activeGrid } from '../../engine/exploration';
 import { armorClass, spellSlotsMax, slotsAvailable, resourceLeft, speed } from '../../engine/character';
 import { awardXp, addLog, addItem } from '../../engine/state';
 import { bark } from '../../engine/companionMind';
-import { drawTile, drawToken, glow } from '../render/tiles';
+import { glow } from '../render/tiles';
+import {
+  createIsoView, isoPoint, isoTileAt, isoElevation, drawIsoGround, drawIsoProp,
+  drawIsoHighlight, drawIsoToken, drawIsoBuilding, hasIsoProp, type IsoView,
+} from '../render/isometric';
+import { mapArchitecture } from '../render/mapArchitecture';
 import { charPortrait } from '../portraits';
 import { settings, cpuDelay } from '../../core/settings';
 import { playMusic, sfx } from '../../audio/audio';
@@ -20,6 +26,7 @@ import { t } from '../../i18n/index';
 
 interface FloatText { x: number; y: number; text: string; color: string; born: number; big?: boolean; }
 interface Flash { tiles: { x: number; y: number }[]; color: string; born: number; }
+interface Strike { from: { x: number; y: number }; to: { x: number; y: number }; born: number; hit: boolean; crit: boolean; }
 
 export class CombatScreen implements Screen {
   el: HTMLElement;
@@ -31,9 +38,21 @@ export class CombatScreen implements Screen {
   private partyBox: HTMLElement;
   private logBox: HTMLElement;
   private info: HTMLElement;
-  private ts = 40;
-  private ox = 0;
-  private oy = 0;
+  private ts = 64;
+  private view: IsoView = { tileWidth: 64, originX: 0, originY: 0 };
+  private cameraX = 0;
+  private cameraY = 0;
+  private zoom = 1;
+  private panX = 0;
+  private panY = 0;
+  private gridVisible = true;
+  private drag: { x: number; y: number; panX: number; panY: number } | null = null;
+  private suppressClick = false;
+  private lastFrame = 0;
+  private actionReserve = 190;
+  private strikes: Strike[] = [];
+  private impactUntil = new Map<string, number>();
+  private tools: HTMLElement;
   private raf = 0;
   private disp = new Map<string, { x: number; y: number; queue: { x: number; y: number }[] }>();
   private floats: FloatText[] = [];
@@ -44,6 +63,7 @@ export class CombatScreen implements Screen {
   private running = false;
   private done = false;
   private reachCache: Map<string, any> | null = null;
+  private pathPreview: { key: string; path: { x: number; y: number }[] | null; provokes: boolean } | null = null;
 
   constructor(private app: App, encounterId: string, ambush: 'party' | 'enemy' | undefined, private onDone: (r: 'victory' | 'defeat' | 'fled') => void) {
     this.cb = new Combat(app.state!, encounterId, { ambush });
@@ -54,8 +74,42 @@ export class CombatScreen implements Screen {
     this.partyBox = h('div', { class: 'cb-party' });
     this.logBox = h('div', { class: 'cb-log panel' });
     this.info = h('div', { class: 'cb-info panel' });
-    this.el = h('div', { class: 'screen combat' }, this.canvas, this.timeline, this.partyBox, this.logBox, this.info, this.actionBar);
-    this.canvas.addEventListener('mousemove', (e) => { this.hover = this.toTile(e); this.renderInfo(); });
+    const frame = this.boardFrame();
+    this.cameraX = frame.centerX; this.cameraY = frame.centerY;
+    this.tools = h('div', { class: 'battle-tools panel', 'aria-label': 'Battlefield camera' },
+      h('div', { class: 'battle-tools-label' }, 'BATTLEFIELD'),
+      h('button', { class: 'icon-btn', title: 'Zoom out (−)', 'aria-label': 'Zoom out', onclick: () => this.changeZoom(0.83) }, '−'),
+      h('button', { class: 'icon-btn', title: 'Zoom in (+)', 'aria-label': 'Zoom in', onclick: () => this.changeZoom(1.2) }, '+'),
+      h('button', { class: 'btn small ghost', title: 'Fit the whole encounter (Home)', onclick: () => this.fitBattle() }, 'Fit'),
+      h('button', { class: 'btn small ghost', title: 'Focus the current combatant (F)', onclick: () => this.focusCurrent() }, 'Focus'),
+      h('button', { class: 'btn small ghost battle-grid-toggle', title: 'Show or hide the grid (G)', 'aria-pressed': 'true', onclick: () => this.toggleGrid() }, 'Grid'),
+      h('div', { class: 'battle-tools-hint' }, 'Scroll to zoom · Shift-drag to pan'));
+    this.el = h('div', { class: 'screen combat isometric-combat' }, this.canvas,
+      h('div', { class: 'battle-heading' }, h('span', { class: 'battle-overline' }, 'TACTICAL ENCOUNTER'), h('div', null, this.cb.encounter.name)),
+      this.timeline, this.partyBox, this.logBox, this.info, this.actionBar, this.tools);
+    this.canvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
+    this.canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 1 && !(e.button === 0 && e.shiftKey)) return;
+      e.preventDefault();
+      this.drag = { x: e.clientX, y: e.clientY, panX: this.panX, panY: this.panY };
+      this.suppressClick = true;
+      this.canvas.setPointerCapture(e.pointerId);
+      this.canvas.style.cursor = 'grabbing';
+    });
+    const stopDrag = (e: PointerEvent) => {
+      this.drag = null;
+      if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
+      this.canvas.style.cursor = 'default';
+      setTimeout(() => { this.suppressClick = false; }, 0);
+    };
+    this.canvas.addEventListener('pointerup', stopDrag);
+    this.canvas.addEventListener('pointercancel', stopDrag);
+    this.canvas.addEventListener('pointerleave', () => { if (!this.drag) { this.hover = null; this.renderInfo(); } });
+    this.canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const r = this.canvas.getBoundingClientRect();
+      this.changeZoom(e.deltaY < 0 ? 1.1 : 1 / 1.1, { x: e.clientX - r.left, y: e.clientY - r.top });
+    }, { passive: false });
     this.canvas.addEventListener('click', (e) => this.onClick(e));
     this.canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); this.selected = null; this.renderActions(); });
     for (const c of this.cb.combatants) this.disp.set(c.id, { x: c.x, y: c.y, queue: [] });
@@ -75,8 +129,14 @@ export class CombatScreen implements Screen {
   unmount(): void { cancelAnimationFrame(this.raf); }
 
   onKey(e: KeyboardEvent): boolean | void {
+    const k = e.key.toLowerCase();
+    if (k === 'home') { this.fitBattle(); e.preventDefault(); return true; }
+    if (k === 'f') { this.focusCurrent(); e.preventDefault(); return true; }
+    if (k === 'g') { this.toggleGrid(); e.preventDefault(); return true; }
+    if (k === '+' || k === '=') { this.changeZoom(1.15); e.preventDefault(); return true; }
+    if (k === '-' || k === '_') { this.changeZoom(1 / 1.15); e.preventDefault(); return true; }
     if (e.key === 'Escape') { this.selected = null; this.renderActions(); return true; }
-    if (e.key === ' ' || e.key === 'Enter') { if (this.isPlayerTurn()) this.endTurn(); return true; }
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (this.isPlayerTurn()) this.endTurn(); return true; }
     const n = parseInt(e.key, 10);
     if (n >= 1 && n <= 9 && this.isPlayerTurn()) {
       const btns = this.actionBar.querySelectorAll<HTMLButtonElement>('.act:not([disabled])');
@@ -175,6 +235,10 @@ export class CombatScreen implements Screen {
           if (t) this.floats.push({ x: t.x, y: t.y, text: e.hit ? (e.crit ? 'CRIT!' : '') : 'miss', color: e.crit ? '#ffd24a' : '#cfd6e6', born: performance.now(), big: e.crit });
           sfx(e.hit ? (e.crit ? 'crit' : 'hit') : 'miss');
           const a = this.cb.get(e.attackerId);
+          if (a && t) {
+            this.strikes.push({ from: { x: a.x, y: a.y }, to: { x: t.x, y: t.y }, born: performance.now(), hit: e.hit, crit: e.crit });
+            if (e.hit) this.impactUntil.set(t.id, performance.now() + 260);
+          }
           if (a?.char.companionId && e.crit) { const b = bark(s, a.char.companionId, 'crit'); if (b) this.barkFloat(a, b); }
           if (a?.char.companionId && !e.hit && Math.random() < 0.3) { const b = bark(s, a.char.companionId, 'miss'); if (b) this.barkFloat(a, b); }
           break;
@@ -210,6 +274,7 @@ export class CombatScreen implements Screen {
       }
     }
     this.reachCache = null;
+    this.pathPreview = null;
     this.renderLog();
   }
 
@@ -223,7 +288,116 @@ export class CombatScreen implements Screen {
 
   private toTile(e: MouseEvent): { x: number; y: number } {
     const r = this.canvas.getBoundingClientRect();
-    return { x: Math.floor((e.clientX - r.left - this.ox) / this.ts) + this.cb.bounds.x0, y: Math.floor((e.clientY - r.top - this.oy) / this.ts) + this.cb.bounds.y0 };
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    // Creature art rises above its tile. Clicking the visible body must still target
+    // that creature, rather than the square behind its head in isometric space.
+    if (!this.selected?.area && this.selected?.target !== 'point') {
+      const candidates = this.cb.combatants.filter((c) => !c.removed || c.side === 'party')
+        .sort((a, b) => { const pa = this.disp.get(a.id) ?? a, pb = this.disp.get(b.id) ?? b; return (pb.x + pb.y) - (pa.x + pa.y); });
+      for (const c of candidates) {
+        const d = this.disp.get(c.id) ?? c;
+        const p = isoPoint(d.x, d.y, this.view);
+        const feet = p.y - isoElevation(this.cb.tileChar(c.x, c.y), this.ts);
+        const half = this.ts * (c.char.creatureType === 'dragon' ? 0.43 : 0.27);
+        if (Math.abs(x - p.x) < half && y < feet + this.ts * 0.12 && y > feet - this.ts * 0.91) return { x: c.x, y: c.y };
+      }
+      for (const obj of [...(this.cb.objects ?? [])].filter(o => !o.destroyed).sort((a, b) => b.x + b.y - a.x - a.y)) {
+        const p = isoPoint(obj.x, obj.y, this.view);
+        const height = this.ts * (obj.kind === 'barrel' ? .43 : .78);
+        if (Math.abs(x - p.x) < this.ts * .22 && y < p.y + this.ts * .1 && y > p.y - height) return { x: obj.x, y: obj.y };
+      }
+    }
+    return isoTileAt(x, y, this.view);
+  }
+
+  private onPointerMove(e: PointerEvent): void {
+    if (this.drag) {
+      this.panX = this.drag.panX + e.clientX - this.drag.x;
+      this.panY = this.drag.panY + e.clientY - this.drag.y;
+      this.layoutView();
+      return;
+    }
+    const p = this.toTile(e);
+    if (p.x !== this.hover?.x || p.y !== this.hover?.y) { this.hover = p; this.renderInfo(); }
+    const occ = this.cb.combatants.find((c) => !c.removed && c.x === p.x && c.y === p.y);
+    this.canvas.style.cursor = this.cb.inBounds(p.x, p.y) ? (occ || this.selected ? 'crosshair' : 'pointer') : 'default';
+  }
+
+  private layoutView(): void {
+    const width = this.canvas.clientWidth, height = this.canvas.clientHeight;
+    const frame = this.boardFrame();
+    const compact = width < 1000;
+    const left = compact ? 145 : 260, right = compact ? 215 : 350;
+    this.actionReserve = Math.max(this.actionReserve, this.actionBar.offsetHeight);
+    const bottom = Math.min(height * 0.4, Math.max(160, this.actionReserve + 30));
+    const usableW = Math.max(320, width - left - right - 38);
+    const usableH = Math.max(230, height - bottom - 144);
+    const fit = Math.min(88, Math.max(22, Math.min(usableW / frame.spanX, usableH / frame.spanY)));
+    this.ts = Math.min(128, Math.max(22, fit * this.zoom));
+    this.view = createIsoView(width, height, this.cameraX, this.cameraY, this.ts);
+    this.view.originX += (left - right) / 2 + this.panX;
+    this.view.originY += (100 - bottom) / 2 + 22 + this.panY;
+  }
+
+  /** Fit complete edge buildings and their roofs, without enlarging playable bounds. */
+  private boardFrame() {
+    const b = this.cb.bounds, grid = activeGrid(this.app.state!, this.cb.map);
+    const architecture = mapArchitecture(this.cb.map, grid);
+    const buildings = architecture.buildings.filter((r) => r.x <= b.x1 && r.y <= b.y1 && r.x + r.w - 1 >= b.x0 && r.y + r.h - 1 >= b.y0);
+    const bounds = { ...b };
+    for (const r of buildings) {
+      bounds.x0 = Math.min(bounds.x0, r.x); bounds.y0 = Math.min(bounds.y0, r.y);
+      bounds.x1 = Math.max(bounds.x1, r.x + r.w - 1); bounds.y1 = Math.max(bounds.y1, r.y + r.h - 1);
+    }
+    const unit: IsoView = { tileWidth: 1, originX: 0, originY: 0 };
+    const corners = [isoPoint(bounds.x0 - .5, bounds.y0 - .5, unit), isoPoint(bounds.x1 + .5, bounds.y0 - .5, unit),
+      isoPoint(bounds.x1 + .5, bounds.y1 + .5, unit), isoPoint(bounds.x0 - .5, bounds.y1 + .5, unit)];
+    const minX = Math.min(...corners.map(p => p.x)), maxX = Math.max(...corners.map(p => p.x));
+    let minY = Math.min(...corners.map(p => p.y)) - 1.35;
+    const maxY = Math.max(...corners.map(p => p.y)) + .18;
+    for (const r of buildings) {
+      const wall = r.id.includes('mill') ? 1.75 : Math.min(1.35, .85 + Math.min(r.w, r.h) * .075);
+      const roof = .65 + Math.min(r.w, r.h) * .09;
+      const ridge = isoPoint(r.x - .5, r.y - .5 + r.h / 2, unit);
+      minY = Math.min(minY, ridge.y - wall - roof - .3);
+    }
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    return { bounds, grid, architecture, buildings, spanX: maxX - minX, spanY: maxY - minY,
+      centerX: cx + 2 * cy, centerY: 2 * cy - cx };
+  }
+
+  private changeZoom(multiplier: number, pointer?: { x: number; y: number }): void {
+    this.layoutView();
+    // Keep the exact fractional world point under the cursor; rounding to a cell
+    // centre makes successive wheel steps drift near diamond edges.
+    const u = pointer ? (pointer.x - this.view.originX) / this.ts : 0;
+    const v = pointer ? (pointer.y - this.view.originY) / this.ts : 0;
+    const anchor = pointer ? { x: u + 2 * v, y: 2 * v - u } : null;
+    const before = anchor ? isoPoint(anchor.x, anchor.y, this.view) : null;
+    this.zoom = Math.min(3.5, Math.max(0.55, this.zoom * multiplier));
+    this.layoutView();
+    if (anchor && before) {
+      const after = isoPoint(anchor.x, anchor.y, this.view);
+      this.panX += before.x - after.x; this.panY += before.y - after.y;
+      this.layoutView();
+    }
+  }
+
+  private fitBattle(): void {
+    const frame = this.boardFrame();
+    this.cameraX = frame.centerX; this.cameraY = frame.centerY;
+    this.zoom = 1; this.panX = 0; this.panY = 0; this.layoutView();
+  }
+
+  private focusCurrent(): void {
+    this.cameraX = this.cur.x; this.cameraY = this.cur.y;
+    this.panX = 0; this.panY = 0;
+    this.zoom = Math.max(1.25, this.zoom); this.layoutView();
+  }
+
+  private toggleGrid(): void {
+    this.gridVisible = !this.gridVisible;
+    this.tools.querySelector('.battle-grid-toggle')?.setAttribute('aria-pressed', String(this.gridVisible));
   }
 
   private reach(): Map<string, any> {
@@ -232,8 +406,10 @@ export class CombatScreen implements Screen {
   }
 
   private onClick(e: MouseEvent): void {
+    if (this.suppressClick || e.shiftKey) { this.suppressClick = false; return; }
     if (!this.isPlayerTurn()) return;
     const p = this.toTile(e);
+    if (!this.cb.inBounds(p.x, p.y)) return;
     const c = this.cur;
     const a = this.selected;
     try {
@@ -287,6 +463,7 @@ export class CombatScreen implements Screen {
 
   private afterPlayerAction(): void {
     this.reachCache = null;
+    this.pathPreview = null;
     this.renderAll();
     if (this.cb.over) { this.finish(); return; }
     const c = this.cur;
@@ -406,7 +583,7 @@ export class CombatScreen implements Screen {
 
   private renderInfo(): void {
     clear(this.info);
-    if (!this.hover) return;
+    if (!this.hover || !this.cb.inBounds(this.hover.x, this.hover.y)) return;
     const occ = this.cb.combatants.find((c) => !c.removed && c.x === this.hover!.x && c.y === this.hover!.y);
     const obj = this.cb.objectAt(this.hover.x, this.hover.y);
     if (occ) {
@@ -440,107 +617,217 @@ export class CombatScreen implements Screen {
   // ─────────────────────── Drawing
 
   private draw(time: number): void {
-    const cv = this.canvas;
-    if (cv.width !== cv.clientWidth || cv.height !== cv.clientHeight) { cv.width = cv.clientWidth; cv.height = cv.clientHeight; }
-    const ctx = this.ctx;
-    const b = this.cb.bounds;
-    const cols = b.x1 - b.x0 + 1, rows = b.y1 - b.y0 + 1;
-    this.ts = Math.max(20, Math.min(64, Math.floor(Math.min((cv.width - 40) / cols, (cv.height - 40) / rows))));
-    const ts = this.ts;
-    this.ox = Math.floor((cv.width - cols * ts) / 2);
-    this.oy = Math.floor((cv.height - rows * ts) / 2);
-    ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, cv.width, cv.height);
-    const px = (x: number) => this.ox + (x - b.x0) * ts, py = (y: number) => this.oy + (y - b.y0) * ts;
-    for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
-      drawTile(ctx, this.cb.tileChar(x, y), x, y, px(x), py(y), ts, this.cb.map.tileset, time);
+    const cv = this.canvas, width = cv.clientWidth, height = cv.clientHeight;
+    if (!width || !height) return;
+    const ratio = Math.min(2, window.devicePixelRatio || 1);
+    if (cv.width !== Math.round(width * ratio) || cv.height !== Math.round(height * ratio)) {
+      cv.width = Math.round(width * ratio); cv.height = Math.round(height * ratio);
     }
-    for (const f of this.cb.fires) { ctx.fillStyle = `rgba(255,120,30,${0.35 + 0.15 * Math.sin(time / 120 + f.x)})`; ctx.fillRect(px(f.x), py(f.y), ts, ts); }
-    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-    for (let x = 0; x <= cols; x++) { ctx.beginPath(); ctx.moveTo(this.ox + x * ts, this.oy); ctx.lineTo(this.ox + x * ts, this.oy + rows * ts); ctx.stroke(); }
-    for (let y = 0; y <= rows; y++) { ctx.beginPath(); ctx.moveTo(this.ox, this.oy + y * ts); ctx.lineTo(this.ox + cols * ts, this.oy + y * ts); ctx.stroke(); }
-    // Reachable squares & targets
+    const ctx = this.ctx;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    this.layoutView();
+    const view = this.view, ts = this.ts, b = this.cb.bounds;
+    const { bounds: visualBounds, grid, architecture, buildings } = this.boardFrame();
+    const gridWidth = grid[0].length;
+    const dt = Math.min(50, this.lastFrame ? time - this.lastFrame : 16.67);
+    this.lastFrame = time;
+    const now = performance.now();
+
+    const backdrop = ctx.createRadialGradient(width * 0.48, height * 0.45, 30, width * 0.48, height * 0.45, Math.max(width, height) * 0.68);
+    backdrop.addColorStop(0, '#171a24'); backdrop.addColorStop(0.55, '#0d121a'); backdrop.addColorStop(1, '#050810');
+    ctx.fillStyle = backdrop; ctx.fillRect(0, 0, width, height);
+
+    // A cutaway arena is drawn on its actual game coordinates. The visual diamond
+    // never changes distance, movement costs, line of sight, or attack resolution.
+    const corners = [isoPoint(b.x0 - 0.5, b.y0 - 0.5, view), isoPoint(b.x1 + 0.5, b.y0 - 0.5, view),
+      isoPoint(b.x1 + 0.5, b.y1 + 0.5, view), isoPoint(b.x0 - 0.5, b.y1 + 0.5, view)];
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.75)'; ctx.shadowBlur = 45; ctx.shadowOffsetY = 22;
+    const outer = [isoPoint(visualBounds.x0 - .5, visualBounds.y0 - .5, view), isoPoint(visualBounds.x1 + .5, visualBounds.y0 - .5, view),
+      isoPoint(visualBounds.x1 + .5, visualBounds.y1 + .5, view), isoPoint(visualBounds.x0 - .5, visualBounds.y1 + .5, view)];
+    ctx.beginPath(); outer.forEach((p, i) => i ? ctx.lineTo(p.x, p.y + 10) : ctx.moveTo(p.x, p.y + 10));
+    ctx.closePath(); ctx.fillStyle = '#141019'; ctx.fill(); ctx.restore();
+    for (let y = visualBounds.y0; y <= visualBounds.y1; y++) for (let x = visualBounds.x0; x <= visualBounds.x1; x++) {
+      const playable = this.cb.inBounds(x, y);
+      drawIsoGround(ctx, playable ? this.cb.tileChar(x, y) : (grid[y]?.[x] ?? '#'), x, y, view, this.cb.map.tileset, time,
+        { grid: playable && this.gridVisible, dim: !playable });
+    }
+    ctx.strokeStyle = 'rgba(205,165,102,0.48)'; ctx.lineWidth = 1;
+    ctx.beginPath(); corners.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.stroke();
+
+    // Actual movement and attack previews are painted on diamond-shaped tiles.
     if (this.isPlayerTurn()) {
       const c = this.cur;
-      if (!this.selected && c.movement > 0) {
-        ctx.fillStyle = 'rgba(120,180,255,0.16)';
-        for (const v of this.reach().values()) ctx.fillRect(px(v.x) + 1, py(v.y) + 1, ts - 2, ts - 2);
+      if (!this.selected && c.movement > 0) for (const v of this.reach().values()) {
+        drawIsoHighlight(ctx, v.x, v.y, view, 'rgba(95,183,211,0.14)', 'rgba(132,211,233,0.15)');
       }
       if (this.selected) {
         const a = this.selected;
-        if (a.area && this.hover) {
-          const tiles = this.cb.areaTiles(c, a, a.area.fromSelf && a.area.shape === 'radius' ? { x: c.x, y: c.y } : this.hover);
-          ctx.fillStyle = 'rgba(255,140,60,0.3)';
-          for (const t2 of tiles) ctx.fillRect(px(t2.x), py(t2.y), ts, ts);
+        if (a.area && this.hover && this.cb.inBounds(this.hover.x, this.hover.y)) {
+          const affected = this.cb.areaTiles(c, a, a.area.fromSelf && a.area.shape === 'radius' ? { x: c.x, y: c.y } : this.hover);
+          for (const p of affected) if (this.cb.inBounds(p.x, p.y)) {
+            const ally = this.cb.combatants.some((ally) => ally.side === 'party' && ally.char.hp > 0 && ally.x === p.x && ally.y === p.y);
+            drawIsoHighlight(ctx, p.x, p.y, view, ally ? 'rgba(242,91,93,0.39)' : 'rgba(236,164,76,0.3)', ally ? '#ff8782' : 'rgba(255,210,144,0.7)');
+          }
         } else {
-          ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2;
-          for (const t2 of this.cb.validTargets(c, a)) ctx.strokeRect(px(t2.x) + 2, py(t2.y) + 2, ts - 4, ts - 4);
-          for (const o of this.cb.objectTargets(c, a)) ctx.strokeRect(px(o.x) + 2, py(o.y) + 2, ts - 4, ts - 4);
-          ctx.lineWidth = 1;
+          for (const target of this.cb.validTargets(c, a)) drawIsoHighlight(ctx, target.x, target.y, view, 'rgba(227,182,93,0.15)', '#f0ca79');
+          for (const obj of this.cb.objectTargets(c, a)) drawIsoHighlight(ctx, obj.x, obj.y, view, 'rgba(227,182,93,0.15)', '#f0ca79');
         }
-        if (a.target === 'point' && !a.area && this.hover) { ctx.strokeStyle = '#9fd3ff'; ctx.strokeRect(px(this.hover.x), py(this.hover.y), ts, ts); }
+        if (a.target === 'point' && !a.area && this.hover && this.cb.inBounds(this.hover.x, this.hover.y)) {
+          drawIsoHighlight(ctx, this.hover.x, this.hover.y, view, 'rgba(140,125,230,0.25)', '#cdb0ff');
+        }
       }
-      // Path preview with opportunity-attack warning
       if (!this.selected && this.hover && this.reach().has(`${this.hover.x},${this.hover.y}`)) {
-        const path = this.cb.pathTo(c, this.hover.x, this.hover.y);
-        if (path) {
-          const prov = this.cb.provokers(c, path);
-          ctx.fillStyle = prov.length ? 'rgba(255,90,70,0.7)' : 'rgba(255,230,160,0.7)';
-          for (const p of path) { ctx.beginPath(); ctx.arc(px(p.x) + ts / 2, py(p.y) + ts / 2, ts * 0.1, 0, Math.PI * 2); ctx.fill(); }
+        const key = `${c.id}:${c.x},${c.y}:${c.movement}:${this.hover.x},${this.hover.y}`;
+        if (this.pathPreview?.key !== key) {
+          const path = this.cb.pathTo(c, this.hover.x, this.hover.y);
+          this.pathPreview = { key, path, provokes: !!path && this.cb.provokers(c, path).length > 0 };
+        }
+        const { path, provokes } = this.pathPreview;
+        if (path?.length) {
+          ctx.save(); ctx.strokeStyle = provokes ? '#ef8d7b' : '#efd099'; ctx.fillStyle = ctx.strokeStyle;
+          ctx.lineWidth = 2; ctx.setLineDash([4, 5]); ctx.beginPath();
+          const source = isoPoint(c.x, c.y, view); ctx.moveTo(source.x, source.y);
+          for (const p of path) { const q = isoPoint(p.x, p.y, view); ctx.lineTo(q.x, q.y); }
+          ctx.stroke(); ctx.setLineDash([]);
+          for (const p of path) { const q = isoPoint(p.x, p.y, view); ctx.beginPath(); ctx.ellipse(q.x, q.y, Math.max(2, ts * 0.045), Math.max(1.5, ts * 0.024), 0, 0, Math.PI * 2); ctx.fill(); }
+          ctx.restore();
         }
       }
     }
-    // Objects
-    for (const o of this.cb.objects) {
-      if (o.destroyed) continue;
-      if (o.kind === 'pillar') {
-        glow(ctx, px(o.x) + ts / 2, py(o.y) + ts / 2, ts * 0.35, `rgba(120,170,255,${0.5 + 0.2 * Math.sin(time / 200)})`);
-        ctx.fillStyle = '#9fc4ff'; ctx.beginPath(); ctx.moveTo(px(o.x) + ts / 2, py(o.y) + 3); ctx.lineTo(px(o.x) + ts * 0.75, py(o.y) + ts - 3); ctx.lineTo(px(o.x) + ts * 0.25, py(o.y) + ts - 3); ctx.fill();
-      }
+    if (this.hover && this.cb.inBounds(this.hover.x, this.hover.y)) {
+      drawIsoHighlight(ctx, this.hover.x, this.hover.y, view, 'rgba(244,224,175,0.05)', 'rgba(252,226,170,0.8)');
     }
-    // Flashes
-    const now = performance.now();
-    this.flashes = this.flashes.filter((f) => now - f.born < 700);
-    for (const f of this.flashes) {
-      ctx.globalAlpha = 1 - (now - f.born) / 700;
-      ctx.fillStyle = f.color;
-      for (const t2 of f.tiles) ctx.fillRect(px(t2.x), py(t2.y), ts, ts);
-      ctx.globalAlpha = 1;
-    }
-    // Tokens
-    for (const c of this.cb.combatants) {
-      if (c.removed && c.side === 'enemy') continue;
+    if (!this.cb.over) drawIsoHighlight(ctx, this.cur.x, this.cur.y, view, 'rgba(230,183,94,0.15)', 'rgba(255,219,143,0.9)');
+
+    // Animate positions before sorting: foreground terrain and figures share a
+    // single painter order, so a moving adventurer can pass behind a pillar.
+    const actors = this.cb.combatants.filter((c) => !(c.removed && c.side === 'enemy')).map((c) => {
       const d = this.disp.get(c.id) ?? { x: c.x, y: c.y, queue: [] };
       if (!this.disp.has(c.id)) this.disp.set(c.id, d);
       const target = d.queue[0] ?? { x: c.x, y: c.y };
-      const sp = cpuDelay() === 0 ? 1 : 0.35;
-      d.x += (target.x - d.x) * sp; d.y += (target.y - d.y) * sp;
-      if (Math.abs(target.x - d.x) < 0.05 && Math.abs(target.y - d.y) < 0.05) { d.x = target.x; d.y = target.y; if (d.queue.length) d.queue.shift(); }
-      const x = this.ox + (d.x - b.x0) * ts, y = this.oy + (d.y - b.y0) * ts;
-      const ch = c.char;
-      const color = c.side === 'enemy' ? (ENEMY_BY_ID[ch.templateId ?? '']?.color ?? '#c66') : `hsl(${ch.companionId ? COMPANION_BY_ID[ch.companionId].hue : ch.portrait.hue},45%,62%)`;
-      const glyph = c.side === 'enemy' ? (ENEMY_BY_ID[ch.templateId ?? '']?.glyph ?? '?') : ch.name[0];
-      if (c.id === this.cur.id && !this.cb.over) { ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x + ts / 2, y + ts / 2, ts * 0.47 + Math.sin(time / 200) * 1.5, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 1; }
-      drawToken(ctx, x, y, ts, color, glyph, { enemy: c.side === 'enemy', dim: ch.hp <= 0, selected: c.id === this.cur.id });
-      if ((ch.traits ?? []).includes('echo_touched')) glow(ctx, x + ts / 2, y + ts / 2, ts * 0.3, 'rgba(180,150,255,0.25)');
-      // mini HP bar
-      if (!(settings().hideEnemyHp && c.side === 'enemy') && ch.hp > 0) {
-        ctx.fillStyle = '#300'; ctx.fillRect(x + 4, y + ts - 5, ts - 8, 3);
-        ctx.fillStyle = c.side === 'enemy' ? '#e05a4a' : '#5ad06a'; ctx.fillRect(x + 4, y + ts - 5, (ts - 8) * Math.max(0, ch.hp / ch.maxHp), 3);
+      const amount = cpuDelay() === 0 ? 1 : 1 - Math.pow(0.65, dt / 16.67);
+      d.x += (target.x - d.x) * amount; d.y += (target.y - d.y) * amount;
+      if (Math.abs(target.x - d.x) < 0.05 && Math.abs(target.y - d.y) < 0.05) {
+        d.x = target.x; d.y = target.y; if (d.queue.length) d.queue.shift();
       }
+      const p = isoPoint(d.x, d.y, view);
+      p.y -= isoElevation(this.cb.tileChar(c.x, c.y), ts);
+      return { c, d, p };
+    });
+    const layers: { depth: number; draw: () => void }[] = [];
+    for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
+      const ch = this.cb.tileChar(x, y);
+      if (ch === 'W' && architecture.covered.has(y * gridWidth + x)) continue;
+      if (!hasIsoProp(ch)) continue;
+      // Interior wall mass stays a dark cutaway; only its exposed face rises.
+      if (ch === '#' && ![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => tile(this.cb.tileChar(x + dx, y + dy)).walk)) continue;
+      const p = isoPoint(x, y, view);
+      const tree = ch === 'T' || ch === 't';
+      const fade = actors.some((a) => a.c.char.hp > 0 && Math.abs(a.p.x - p.x) < ts * (tree ? .95 : .6) && a.p.y < p.y + ts * .15 && a.p.y > p.y - ts * (tree ? 2.65 : 1.65));
+      layers.push({ depth: x + y + 0.1, draw: () => drawIsoProp(ctx, ch, x, y, view, this.cb.map.tileset, time, { fade: fade ? 0.3 : 1 }) });
+    }
+    for (const building of buildings) {
+      const pts = [isoPoint(building.x - 0.5, building.y - 0.5, view), isoPoint(building.x + building.w - 0.5, building.y - 0.5, view),
+        isoPoint(building.x + building.w - 0.5, building.y + building.h - 0.5, view), isoPoint(building.x - 0.5, building.y + building.h - 0.5, view)];
+      const left = Math.min(...pts.map(p => p.x)), right = Math.max(...pts.map(p => p.x)), top = Math.min(...pts.map(p => p.y)) - ts * 2, bottom = Math.max(...pts.map(p => p.y));
+      const fade = actors.some(a => a.c.char.hp > 0 && a.p.x > left && a.p.x < right && a.p.y > top && a.p.y < bottom) ? 0.3 : 1;
+      layers.push({ depth: building.x + building.w - 1 + building.y + building.h - 1,
+        draw: () => drawIsoBuilding(ctx, building, view, time, this.cb.map.tileset, fade) });
+    }
+    for (const fire of this.cb.fires) layers.push({ depth: fire.x + fire.y + 0.25, draw: () => {
+      drawIsoHighlight(ctx, fire.x, fire.y, view, `rgba(239,97,32,${0.2 + 0.08 * Math.sin(time / 170 + fire.x)})`);
+      drawIsoProp(ctx, 'F', fire.x, fire.y, view, this.cb.map.tileset, time);
+    } });
+    for (const obj of this.cb.objects) {
+      if (obj.destroyed) continue;
+      if (obj.kind === 'barrel') {
+        if (this.cb.tileChar(obj.x, obj.y) !== 'b') layers.push({ depth: obj.x + obj.y + 0.2, draw: () => drawIsoProp(ctx, 'b', obj.x, obj.y, view, this.cb.map.tileset, time) });
+        continue;
+      }
+      layers.push({ depth: obj.x + obj.y + 0.3, draw: () => {
+        const p = isoPoint(obj.x, obj.y, view), h = ts * 0.75;
+        glow(ctx, p.x, p.y - h * 0.45, ts * 0.48, `rgba(115,126,249,${0.21 + Math.sin(time / 400) * 0.04})`);
+        ctx.fillStyle = '#3b3b5c'; ctx.beginPath(); ctx.ellipse(p.x, p.y, ts * 0.23, ts * 0.11, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(p.x, p.y - h); ctx.lineTo(p.x + ts * 0.18, p.y - h * 0.3); ctx.lineTo(p.x, p.y); ctx.closePath();
+        const gl = ctx.createLinearGradient(p.x - ts * 0.2, p.y - h, p.x + ts * 0.2, p.y); gl.addColorStop(0, '#e9d8ff'); gl.addColorStop(1, '#7a75b9'); ctx.fillStyle = gl; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(p.x, p.y - h); ctx.lineTo(p.x - ts * 0.18, p.y - h * 0.3); ctx.lineTo(p.x, p.y); ctx.closePath(); ctx.fillStyle = '#9a9fe6'; ctx.fill();
+        ctx.strokeStyle = '#ddccff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x, p.y - h); ctx.lineTo(p.x, p.y); ctx.stroke();
+      } });
+    }
+    for (const actor of actors) layers.push({ depth: actor.d.x + actor.d.y + 0.4, draw: () => {
+      const { c, p, d } = actor, ch = c.char;
+      const color = c.side === 'enemy' ? (ENEMY_BY_ID[ch.templateId ?? '']?.color ?? '#c66') : `hsl(${ch.companionId ? COMPANION_BY_ID[ch.companionId].hue : ch.portrait.hue},45%,62%)`;
+      const glyph = c.side === 'enemy' ? (ENEMY_BY_ID[ch.templateId ?? '']?.glyph ?? '') : '';
+      const impact = Math.max(0, (this.impactUntil.get(c.id) ?? 0) - now);
+      const recoil = impact ? Math.sin(impact / 18) * ts * 0.045 * (impact / 260) : 0;
+      if ((ch.traits ?? []).includes('echo_touched')) glow(ctx, p.x, p.y - ts * 0.3, ts * 0.32, 'rgba(180,150,255,0.18)');
+      drawIsoToken(ctx, p.x + recoil, p.y, ts, color, glyph, {
+        character: ch, role: ch.classId, enemy: c.side === 'enemy', dim: ch.hp <= 0, down: ch.hp <= 0,
+        selected: c.id === this.cur.id && !this.cb.over, time, facing: d.queue.length ? Math.atan2(d.queue[0].y - d.y, d.queue[0].x - d.x) : undefined,
+      });
       if (ch.conditions.some((k) => ['stunned', 'incapacitated', 'prone', 'restrained', 'frightened', 'poisoned'].includes(k.id))) {
-        ctx.fillStyle = '#ffdd88'; ctx.font = `${ts * 0.3}px serif`; ctx.textAlign = 'center'; ctx.fillText('✶', x + ts * 0.85, y + ts * 0.25);
+        ctx.save(); ctx.strokeStyle = '#edc991'; ctx.lineWidth = 1.3;
+        for (let i = 0; i < 3; i++) { const a = time / 700 + i * Math.PI * 2 / 3; const xx = p.x + Math.cos(a) * ts * 0.2, yy = p.y - ts * 0.91 + Math.sin(a) * ts * 0.05;
+          ctx.beginPath(); ctx.moveTo(xx - 3, yy); ctx.lineTo(xx + 3, yy); ctx.moveTo(xx, yy - 3); ctx.lineTo(xx, yy + 3); ctx.stroke(); }
+        ctx.restore();
+      }
+    } });
+    layers.sort((a, b2) => a.depth - b2.depth);
+    for (const layer of layers) layer.draw();
+
+    this.flashes = this.flashes.filter((f) => now - f.born < 700);
+    for (const flash of this.flashes) {
+      const k = Math.max(0, (now - flash.born) / 700);
+      ctx.save(); ctx.globalAlpha = (1 - k) * 0.7;
+      for (const p of flash.tiles) {
+        if (!this.cb.inBounds(p.x, p.y)) continue;
+        drawIsoHighlight(ctx, p.x, p.y, view, flash.color);
+        const q = isoPoint(p.x, p.y, view); glow(ctx, q.x, q.y - ts * 0.22, ts * (0.15 + k * 0.15), flash.color);
+      }
+      ctx.restore();
+    }
+    this.strikes = this.strikes.filter((s) => now - s.born < 350);
+    for (const strike of this.strikes) {
+      const k = (now - strike.born) / 350, a = isoPoint(strike.from.x, strike.from.y, view), z = isoPoint(strike.to.x, strike.to.y, view);
+      a.y -= ts * 0.4; z.y -= ts * 0.45;
+      ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k); ctx.lineCap = 'round';
+      ctx.strokeStyle = strike.crit ? '#ffe0a0' : strike.hit ? '#e0c4a1' : '#889bab'; ctx.lineWidth = strike.crit ? 4 : 2;
+      ctx.shadowColor = ctx.strokeStyle; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.moveTo(a.x + (z.x - a.x) * Math.max(0, k - 0.25), a.y + (z.y - a.y) * Math.max(0, k - 0.25));
+      ctx.lineTo(a.x + (z.x - a.x) * Math.min(1, k * 3), a.y + (z.y - a.y) * Math.min(1, k * 3)); ctx.stroke();
+      if (strike.hit) { ctx.beginPath(); ctx.arc(z.x, z.y, ts * (0.06 + k * 0.23), -0.7, 1.6); ctx.stroke(); }
+      ctx.restore();
+    }
+
+    // Health/status UI stays above scenery; this prevents a foreground wall from
+    // concealing essential tactical information even while its art fades out.
+    for (const { c, p } of actors) {
+      const ch = c.char, barW = Math.max(24, ts * 0.5), top = p.y - ts * 0.97;
+      if (!(settings().hideEnemyHp && c.side === 'enemy') && ch.hp > 0) {
+        ctx.fillStyle = 'rgba(8,10,17,0.94)'; ctx.fillRect(p.x - barW / 2 - 2, top - 2, barW + 4, 7);
+        ctx.fillStyle = '#3c2930'; ctx.fillRect(p.x - barW / 2, top, barW, 3);
+        ctx.fillStyle = c.side === 'enemy' ? '#de776c' : '#91c8a2'; ctx.fillRect(p.x - barW / 2, top, barW * Math.max(0, ch.hp / ch.maxHp), 3);
+        if (ch.tempHp > 0) { ctx.fillStyle = '#b09adf'; ctx.fillRect(p.x - barW / 2, top + 4, Math.min(barW, barW * ch.tempHp / ch.maxHp), 2); }
+      }
+      if (this.hover?.x === c.x && this.hover.y === c.y) {
+        ctx.save(); ctx.font = `600 ${Math.max(11, Math.min(15, ts * 0.22))}px Georgia, serif`; ctx.textAlign = 'center';
+        const label = ch.name, textW = ctx.measureText(label).width;
+        ctx.fillStyle = 'rgba(12,14,22,0.96)'; ctx.fillRect(p.x - textW / 2 - 9, top - 27, textW + 18, 21);
+        ctx.strokeStyle = c.side === 'enemy' ? '#ba7d6d' : '#ba9b65'; ctx.strokeRect(p.x - textW / 2 - 9, top - 27, textW + 18, 21);
+        ctx.fillStyle = '#f3dfbc'; ctx.fillText(label, p.x, top - 12); ctx.restore();
       }
     }
-    // Floating texts
     this.floats = this.floats.filter((f) => now - f.born < 1600);
     for (const f of this.floats) {
-      const k = Math.max(0, (now - f.born) / 1600);
-      ctx.globalAlpha = 1 - k;
-      ctx.fillStyle = f.color;
-      ctx.font = `bold ${f.big ? ts * 0.55 : f.text.startsWith('“') ? 13 : ts * 0.38}px Georgia, serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText(f.text, this.ox + (f.x - b.x0) * ts + ts / 2, this.oy + (f.y - b.y0) * ts - k * ts * 0.8);
-      ctx.globalAlpha = 1;
+      if (!f.text || now < f.born) continue;
+      const k = Math.max(0, (now - f.born) / 1600), p = isoPoint(f.x, f.y, view);
+      ctx.save(); ctx.globalAlpha = 1 - k;
+      ctx.font = `bold ${f.big ? Math.max(18, ts * 0.4) : f.text.startsWith('“') ? 13 : Math.max(15, ts * 0.29)}px Georgia, serif`;
+      ctx.textAlign = 'center'; ctx.strokeStyle = 'rgba(6,8,15,0.95)'; ctx.lineWidth = 4; ctx.lineJoin = 'round';
+      const y = p.y - ts * 1.1 - k * ts * 0.65;
+      ctx.strokeText(f.text, p.x, y); ctx.fillStyle = f.color; ctx.fillText(f.text, p.x, y); ctx.restore();
     }
   }
 }

@@ -1,6 +1,6 @@
 # Development Status
 
-_Last updated: build v0.3.1 (Phases 1–4 complete: Prologue and Act I; Aetherfall Visual Edition integrated)._
+_Last updated: build v0.4 (Phases 1–4 complete: Prologue and Act I; Aetherfall Isometric Edition)._
 
 This file is the source of truth for **what actually works**. Anything not listed as implemented is not in the game yet.
 
@@ -49,9 +49,9 @@ This file is the source of truth for **what actually works**. Anything not liste
 
 **Saving & settings**
 - 6 manual slots, quicksave (F5/F9), autosaves; versioned + checksummed + validated + migratable save format; backup & auto-recovery; export/import to file.
-- Settings: CPU speed, manual dice, dice detail, hide enemy HP, auto-end turns, companion chatter, text speed, font size, language (UI), music & effects volume, in-game difficulty change.
+- Settings: CPU speed, manual dice, dice detail, hide enemy HP, auto-end turns, companion chatter, text speed, font size, music & effects volume, in-game difficulty change. The game is English-only (older saves with the former Dutch UI setting load as English).
 
-**Presentation**: procedural portraits, tiles, lighting, animated menu, procedural music per mood + SFX, fullscreen, tooltips, responsive down to ~900px wide.
+**Presentation**: isometric exploration and combat boards with painted miniatures, scenery, materials and buildings; painted portraits (16 player choices, a unique face per companion, named or archetype NPC portraits); animated light, water, smoke and combat feedback; painted title screen and map of Elyndra; procedural music per mood + SFX; fullscreen, tooltips; desktop layout tested at 1280–1600 px wide.
 
 ## Tests (`npm test`)
 
@@ -115,6 +115,15 @@ Content lives in `src/data/act1/` (one `ContentModule` per region, merged into t
 
 Painted title art, ten companion portraits, an illustrated map of Elyndra and a new interface theme, made with ChatGPT and integrated into the source (`src/visual-edition.css`, `src/assets/visuals/`, portraits via `companionArt()` in `src/ui/portraits.ts`). Integration fixed six problems in the delivered version, two of them game-breaking (character creation could not be completed; the exploration/combat HUD collapsed). Details and the list of fixes: `docs/VISUAL_EDITION.md`. Checked in Chromium: menu, all creation steps, exploration HUD, world map, dialogue and combat at 1600, 1366 and 1280 px wide.
 
+## Aetherfall Isometric Edition (v0.4)
+
+Made with ChatGPT as an update package and merged here; details in `docs/ISOMETRIC_EDITION.md`.
+
+- **Renderer** (`src/ui/render/isometric.ts`, `mapArchitecture.ts`, `materials.ts`): shared isometric camera for exploration and combat, buildings assembled from map footprints (with a check that roofs never cover walkable tiles), painted props and materials from `public/art/`, painted miniatures, animated effects, pan/zoom/fit/focus/grid controls.
+- **Portraits** (`src/ui/portraits.ts`): 16 player portraits chosen in character creation (stored in `portrait.art`; older saves get a fallback), story portraits for Pell, Mira, Lira, Jory, Brakka, Vaelis, Orren and Tessa, archetype portraits for NPCs and enemies.
+- **Changed during the merge:** the update shipped the original theme CSS with the two layout bugs fixed in v0.3.1 (character creation could not be finished; the HUD collapsed) — the fixed theme is kept. Six companions (Kael, Seris, Nima, Ilyra, Varek, Korr) were mapped to shared archetype faces that NPCs and player choices also use (Seris looked like Captain Dray); they keep their own painted portraits, so every companion has a unique face (guarded by `tests/visuals.test.ts`). The unused Dutch UI table was removed.
+- **Tests:** 158 in 19 files, incl. the update's projection, sprite selection, combat hit-testing, building-footprint and material-loading tests. Checked in Chromium: menu, all creation steps incl. the portrait gallery, exploration in Hollowmere, Ashenford and Valdros (ruin and other realities), the Senate Dome, world map, dialogue and a combat round — no console errors.
+
 ## Known limitations / honest notes
 
 - **The Prologue and Act I are content-complete; Acts II–VI are not built.** After the Act I epilogue you can keep exploring the Act I regions; Act II regions on the world map stay locked.
@@ -129,8 +138,9 @@ Painted title art, ten companion portraits, an illustrated map of Elyndra and a 
 - Romance is limited to optional hints in camp talks.
 - Combat arenas use the exploration map; very large maps may produce wide arenas.
 - Audio is procedural and simple; there are no recorded music/voice assets.
-- Art: only the title screen, companion portraits and the world map are painted. Exploration and combat boards, tokens, NPC and player portraits are still procedural.
-- Dutch localisation covers only the main UI strings; all narrative text is English.
+- Art: miniatures are single illustrated poses (no frame-by-frame walk or attack cycles); the world is 2.5D Canvas, not 3D. Some minor NPCs without a matching miniature are drawn as a plain fallback figure. Several enemies of one type share a miniature; NPCs share archetype portraits.
+- The painted atlases (`public/art/`, ~22 MB of PNG) make the first load heavier than before.
+- The game is English-only by design.
 
 ## Next development priority
 

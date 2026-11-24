@@ -9,7 +9,7 @@ export interface Settings {
   musicVolume: number;
   sfxVolume: number;
   companionChatter: 'low' | 'normal' | 'high';
-  language: 'en' | 'nl';
+  language: 'en';
 }
 
 const KEY = 'coe.settings';
@@ -23,7 +23,7 @@ let current: Settings = { ...DEFAULT_SETTINGS };
 export function loadSettings(): Settings {
   try {
     const raw = globalThis.localStorage?.getItem(KEY);
-    if (raw) current = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    if (raw) current = { ...DEFAULT_SETTINGS, ...JSON.parse(raw), language: 'en' };
   } catch { /* defaults */ }
   return current;
 }
@@ -31,7 +31,7 @@ export function loadSettings(): Settings {
 export function settings(): Settings { return current; }
 
 export function updateSettings(patch: Partial<Settings>): Settings {
-  current = { ...current, ...patch };
+  current = { ...current, ...patch, language: 'en' };
   try { globalThis.localStorage?.setItem(KEY, JSON.stringify(current)); } catch { /* ignore */ }
   return current;
 }

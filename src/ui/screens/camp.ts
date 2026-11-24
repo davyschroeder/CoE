@@ -1,12 +1,11 @@
 import type { App } from '../app';
 import { h, modal, clear, toast } from '../dom';
 import { COMPANION_BY_ID } from '../../data/companions';
-import { CLASS_BY_ID } from '../../data/classes';
 import { DIALOGUE_BY_ID } from '../../data/dialogue/index';
 import { companionChar } from '../../engine/state';
 import { longRest } from '../../engine/rest';
 import { relationshipSummary } from '../../engine/companionMind';
-import { portraitSvg } from '../portraits';
+import { companionPortrait } from '../portraits';
 import { openDialogue } from './dialogueView';
 import { openCharacter } from './character';
 import { openInventory } from './inventory';
@@ -50,7 +49,7 @@ export function openCamp(app: App): void {
         const active = !!ch && s.activeIds.includes(ch.id);
         const tree = DIALOGUE_BY_ID[`camp_${cs.id}`];
         return h('div', { class: 'panel camp-card' },
-          h('div', { class: 'rel-head' }, h('span', { html: portraitSvg({ hue: d.hue, sigil: CLASS_BY_ID[d.classId].sigil, initials: d.name.split(' ').map((p) => p[0]).join(''), size: 56, companionId: d.id }) }),
+          h('div', { class: 'rel-head' }, h('span', { html: companionPortrait(d.id, 56) }),
             h('div', null, h('b', null, d.name), h('div', { class: 'muted small' }, `${d.title}${active ? ' · in party' : ' · resting at camp'}`))),
           h('div', { class: 'small' }, relationshipSummary(cs)),
           h('div', { class: 'row' },

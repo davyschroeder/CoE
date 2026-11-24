@@ -32,12 +32,6 @@ The delivered version was a separate layer: a stylesheet and a script in `public
 
 `tests/visuals.test.ts` checks that every companion has a portrait, that matching initials never pull in painted art, that the theme only references bundled files, and that it never sets `position` on screens or HUD panels (the rule that caused problems 1 and 2).
 
-## Not changed
+## Later: the Isometric Edition
 
-- The exploration and combat boards are still drawn by the procedural canvas renderer; the theme adds a colour grade and vignette. Tokens on the board still show letters, not portraits.
-- The player's portrait and NPC portraits are still procedural medallions.
-- No new quests, scenes, sound or mechanics.
-
-## Ideas for a later art pass
-
-Painted tiles or tokens for the exploration and combat boards, NPC portraits, location backgrounds for dialogue, and animation — each added with the same regression checks.
+v0.4 builds on this edition: isometric boards, miniatures, scenery, player and NPC portraits (see `ISOMETRIC_EDITION.md`). The theme stays in `src/visual-edition.css`. Of the ten companion portraits added here, six remain in use (Kael, Seris, Nima, Ilyra, Varek, Korr); Brakka, Vaelis, Orren and Tessa now use story portraits that match their miniatures.

@@ -1,0 +1,6 @@
+/* Keep the cascade in one stylesheet, including production manual chunks. */
+@import './styles.css';
+@import './visual-edition.css';
+@import './ui/portrait-gallery.css';
+@import './ui/screens/combat-iso.css';
+@import './ui/isometric-edition.css';

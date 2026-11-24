@@ -41,8 +41,13 @@ Whispering Woods, ruins of Valdros, Ashenford; recruitment of the remaining seve
 - [x] Milestone XP on the main quest so the party reaches the designed levels (4 → 5 → 6) on the critical path
 - [ ] Faction questlines beyond the Ashenford beats (Act II)
 
+## Visual editions ✅ (v0.3.1–v0.4)
+Aetherfall Visual Edition (painted title art, companion portraits, map of Elyndra, interface theme) and Aetherfall Isometric Edition (isometric exploration and combat, painted miniatures, scenery, materials, player and NPC portraits). Art and renderer made with ChatGPT; integrated, fixed and browser-tested here. See `docs/VISUAL_EDITION.md`, `docs/ISOMETRIC_EDITION.md`.
+- [ ] Frame-by-frame walk and attack animations for miniatures
+- [ ] Painted miniatures for the minor NPCs that still use a plain fallback figure
+
 ## Phase 5 — Acts II–VI
 Per `STORY_BIBLE.md` §9–10, one act per milestone, each with an end-to-end test and save compatibility with the previous act. Six endings including the hidden one.
 
 ## Phase 6 — Polish
-Animation, effects, music, performance, UX, accessibility review, balance passes, desktop packaging (Electron or Tauri) for Windows and Linux, full Dutch localisation.
+Animation, effects, music, performance, UX, accessibility review, balance passes, desktop packaging (Electron or Tauri) for Windows and Linux. (The game stays English.)

@@ -1,0 +1,72 @@
+/* Final layout layer: the board and its controls share one screen coordinate space. */
+.explore > .hud-top, .explore > .hud-party, .explore > .hud-log,
+.explore > .hud-bottom, .combat > .cb-party, .combat > .cb-timeline,
+.combat > .cb-actions, .combat > .cb-info, .combat > .cb-log,
+.dialogue.panel { position: absolute; }
+.explore .map-canvas, .combat .combat-canvas { filter: none; touch-action: none; }
+.explore::after, .combat::after { background: radial-gradient(ellipse at center, transparent 48%, rgba(4,6,12,.15) 100%); }
+.explore > .board-controls {
+  position: absolute; left: 17px; top: 320px; z-index: 2;
+  width: 239px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 12px; border-color: #796249;
+  background: linear-gradient(130deg,rgba(23,25,32,.96),rgba(10,15,23,.95));
+}
+.board-controls .board-label { width: 100%; margin: 0 0 4px; font: 10px/1.4 system-ui,sans-serif; letter-spacing: .22em; color: #d5b689; }
+.board-controls .icon-btn { width: 29px; height: 29px; font: 19px/1 system-ui,sans-serif; }
+.board-controls .btn.small { padding: 6px 8px; font-size: 11px; }
+.board-controls .board-grid-toggle[aria-pressed=true] { border-color: #cda36a; color: #f5d59b; background: rgba(133,94,48,.25); }
+.board-hint {
+  position: absolute; z-index: 1; left: 50%; bottom: 78px;
+  transform: translateX(-50%); padding: 7px 19px; max-width: calc(100vw - 32px);
+  color: #d8c9ae; font: 10px/1.5 system-ui,sans-serif; letter-spacing: .06em;
+  text-align: center; white-space: nowrap; pointer-events: none;
+  text-shadow: 0 2px 4px #000;
+  background: linear-gradient(90deg,transparent,rgba(6,11,16,.78) 20%,rgba(6,11,16,.78) 80%,transparent);
+}
+.explore .hud-top { border-top: 2px solid #b69262; gap: 8px 18px; }
+.explore .hud-top .loc { width: 100%; text-align: center; }
+.explore .hud-top .objective { text-align: center; font-size: .8rem; }
+.pc-portrait { flex: none; }
+.pcard .pc-portrait svg { width: 48px; height: 48px; }
+.pcard .pc-info { padding: 2px 0; }
+.pcard { backdrop-filter: blur(4px); }
+.hud-log .ll, .cb-log .ll { text-wrap: pretty; }
+.dialogue .d-portrait svg { width: 82px; height: 82px; }
+.dialogue .d-portrait { flex: 0 0 90px; }
+.dialogue .d-title { font: .73rem/1.5 system-ui,sans-serif; letter-spacing: .05em; margin-top: 5px; }
+.dialogue .d-speaker { margin-bottom: 10px; }
+.creation .hero-preview { border-top: 2px solid #ba925b; }
+.creation .hero-preview-caption .creation-eyebrow { color: #c4a175; }
+.portrait-choice-art svg { filter: none; }
+.main-menu .menu-foot { max-width: 390px; }
+@media (max-width:1250px) {
+  .explore > .board-controls { width: 203px; }
+  .board-controls .btn.small { padding: 5px 6px; }
+}
+@media (max-width:930px) {
+  .explore > .board-controls { top: 270px; left: 8px; width: 173px; padding: 8px; gap: 4px; }
+  .board-controls .board-label { font-size: 9px; }
+  .board-controls .icon-btn { width: 25px; height: 25px; }
+  .board-controls .btn.small { font-size: 10px; padding: 4px 5px; }
+  .board-hint { display: none; }
+  .explore .hud-top { max-height: 100px; overflow-y: auto; }
+  .pcard .pc-portrait svg { width: 42px; height: 42px; }
+}
+@media (max-width:600px) {
+  .explore > .board-controls { top: 244px; width: 135px; }
+  .board-controls .board-label { letter-spacing: .12em; }
+  .explore .hud-top { max-height: 86px; }
+  .pcard .pc-portrait svg { width: 34px; height: 34px; }
+  .dialogue .d-portrait { flex-basis: 62px; }
+  .dialogue .d-portrait svg { width: 54px; height: 54px; }
+  .dialogue .d-head { gap: 10px; }
+}
+@media (max-height:650px) and (min-width:931px) {
+  .explore > .board-controls { top: auto; bottom: 82px; }
+  .hud-party .pcard { min-height: 55px; padding-top: 4px; padding-bottom: 4px; }
+  .main-menu .menu-center { gap: 13px; padding-top: 22px; padding-bottom: 22px; }
+  .main-menu .title-block { padding-bottom: 15px; }
+  .main-menu .title-block::before { margin-bottom: 9px; }
+  .main-menu .menu-btn { min-height: 35px; padding-top: 8px; padding-bottom: 8px; font-size: .9rem; }
+  .main-menu .title { font-size: clamp(60px,8vw,95px); }
+}

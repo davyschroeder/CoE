@@ -1,8 +1,8 @@
 {
   "name": "chronicles-of-aether",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Chronicles of Aether: The Shattered Veil — a single-player D&D-inspired fantasy RPG for the browser.",
+  "description": "Chronicles of Aether: The Shattered Veil \u2014 a single-player D&D-inspired fantasy RPG for the browser.",
   "type": "module",
   "scripts": {
     "dev": "vite",

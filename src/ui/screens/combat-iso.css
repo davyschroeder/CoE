@@ -1,0 +1,30 @@
+/* Isometric battlefield furniture. The game board remains the pointer surface. */
+.isometric-combat .combat-canvas { filter: none; touch-action: none; }
+.battle-heading { position: absolute; top: 86px; left: 50%; transform: translateX(-50%); z-index: 2; pointer-events: none; text-align: center; color: #ebd3a9; font-family: var(--display); font-size: 1.15rem; text-shadow: 0 2px 12px #000, 0 1px 2px #000; }
+.battle-overline { display: block; color: #b2a490; font: 10px system-ui, sans-serif; letter-spacing: .3em; margin-bottom: 5px; }
+.isometric-combat .battle-tools { position: absolute; top: 376px; left: 18px; z-index: 2; width: 238px; padding: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; background: linear-gradient(130deg, rgba(24,23,30,.96), rgba(10,15,23,.96)); }
+.battle-tools-label { width: 100%; font: 10px system-ui, sans-serif; letter-spacing: .2em; color: #d6bb8c; margin-bottom: 4px; }
+.battle-tools-hint { width: 100%; font: 10px/1.55 system-ui, sans-serif; color: #aaa69f; margin-top: 4px; }
+.battle-tools .icon-btn { width: 28px; height: 28px; font-size: 19px; line-height: 20px; }
+.battle-tools .btn.small { padding: 5px 7px; font-size: 11px; }
+.isometric-combat .battle-grid-toggle[aria-pressed=true] { border-color: #bc9563; color: #efce92; background: rgba(136,96,52,.17); }
+.isometric-combat .cb-log { max-height: 36vh; }
+.isometric-combat .cb-info { top: calc(36vh + 34px); }
+.isometric-combat .ab-end .hint { line-height: 1.45; }
+.isometric-combat .cb-actions { max-height: 39vh; overflow-y: auto; }
+@media (max-width: 1250px) { .isometric-combat .battle-tools { width: 203px; top: 366px; } }
+@media (max-width: 930px) {
+  .isometric-combat .battle-tools { top: 290px; width: 173px; left: 8px; padding: 8px; }
+  .isometric-combat .cb-timeline { top: 8px; bottom: auto; max-width: calc(100vw - 410px); }
+  .battle-heading { top: 85px; max-width: calc(100vw - 400px); font-size: .94rem; }
+  .battle-overline { font-size: 8px; letter-spacing: .16em; }
+  .battle-tools-hint { font-size: 9px; }
+}
+@media (max-height: 700px) and (min-width: 931px) { .isometric-combat .battle-tools { top: 355px; padding: 7px; } .battle-tools-hint { display: none; } .battle-heading { top: 70px; } }
+@media (max-width: 600px) {
+  .isometric-combat .battle-tools { top: 290px; width: 135px; }
+  .isometric-combat .cb-timeline { top: auto; bottom: calc(39vh + 18px); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 16px); padding: 6px; }
+  .battle-heading { display: none; }
+  .battle-overline { display: none; }
+  .battle-tools-label { font-size: 9px; }
+}
