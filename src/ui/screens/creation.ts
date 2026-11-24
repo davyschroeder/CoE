@@ -310,7 +310,7 @@ export class CreationScreen implements Screen {
             if (d.companions.includes(c.id)) d.companions = d.companions.filter((x) => x !== c.id);
             else if (d.companions.length < 3) d.companions.push(c.id);
             else toast('You can only bring three. Deselect someone first.', 'bad');
-          }, h('div', { class: 'mini-portrait', html: portraitSvg({ hue: c.hue, sigil: cls.sigil, initials: c.name.split(' ').map((p) => p[0]).join(''), size: 44 }) }));
+          }, h('div', { class: 'mini-portrait', html: portraitSvg({ hue: c.hue, sigil: cls.sigil, initials: c.name.split(' ').map((p) => p[0]).join(''), size: 44, companionId: c.id }) }));
         }))),
       h('div', { class: 'detail panel' },
         h('h3', null, focus.name), h('div', { class: 'muted' }, focus.title),

@@ -3,6 +3,7 @@
 A single-player, D&D-inspired fantasy role-playing game for the browser. You create one adventurer and travel with **three CPU-controlled companions** who have their own opinions, tactics and memories, guided by an in-game **Dungeon Master engine**. Original world, original story, d20 rules.
 
 > **Current build: v0.3 — the complete Prologue ("The Bell That Never Rang") and the complete Act I ("Whispers of the Veil"): Hollowmere the morning after, the Whispering Woods, the city of Ashenford, the four realities of the ruined city of Valdros and the Senate Dome, ending with Ossaryx, the Gloaming Wyrm, and Archon Severin's voice. All ten companions can be recruited.** Plus the Phase 3 systems: class features to level 10, spells to 5th level, crafting, factions, companion personal quests and conflicts, legendary monsters.
+> Includes the **Aetherfall Visual Edition**: painted title art, companion portraits, an illustrated map of Elyndra and a new interface theme (see `docs/VISUAL_EDITION.md`).
 > Acts II–VI are designed (see `STORY_BIBLE.md`) but **not yet implemented**. See `DEVELOPMENT_STATUS.md` for exactly what works.
 
 ## Requirements
@@ -24,6 +25,13 @@ npm run typecheck    # TypeScript only
 ```
 
 The build in `dist/` is fully static (relative paths), so it can be opened from any static web server or wrapped later in a desktop shell (Electron/Tauri) for Windows and Linux packages.
+
+### Quick start without a development setup
+
+After `npm run build`, the `dist/` folder is the whole game. Serve it with any static web server — browsers refuse to load the game from a double-clicked file:
+
+- Linux/macOS: `./RUN_GAME_LINUX.sh`, then open http://127.0.0.1:8000/
+- Windows: double-click `RUN_GAME_WINDOWS.bat` (needs Python 3)
 
 ## How to play
 

@@ -1,4 +1,5 @@
 import './styles.css';
+import './visual-edition.css';
 import { App } from './ui/app';
 import { installTooltips } from './ui/dom';
 import { loadSettings, settings } from './core/settings';

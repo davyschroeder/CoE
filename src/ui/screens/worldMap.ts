@@ -37,7 +37,7 @@ export function openWorldMap(app: App): void {
     <defs><radialGradient id="wm" cx="50%" cy="50%" r="70%"><stop offset="0%" stop-color="#e8dbb8"/><stop offset="100%" stop-color="#b9a47a"/></radialGradient></defs>
     <rect width="100" height="100" fill="url(#wm)"/>
     <path d="M5,30 Q20,10 40,15 T80,10 Q95,30 92,60 T70,95 Q40,98 20,90 T5,30Z" fill="none" stroke="#6b5432" stroke-width="0.6"/>
-    <path d="M46,62 L47,52 M46,62 L30,40 L62,30 M46,62 L72,70 M72,70 L82,45" stroke="#7a6240" stroke-width="0.4" stroke-dasharray="1,1"/>
+    <path d="M46,62 L47,52 M46,62 L30,40 L62,30 M46,62 L72,70 M72,70 L82,45" fill="none" stroke="#7a6240" stroke-width="0.4" stroke-dasharray="1,1"/>
     <path d="M60,74 Q72,72 95,76" stroke="#5a7fa0" stroke-width="0.8" fill="none"/>
     <text x="50" y="7" text-anchor="middle" font-size="4" fill="#4a3720" font-family="Georgia">ELYNDRA</text>
   </svg>`;

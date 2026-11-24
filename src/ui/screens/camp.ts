@@ -50,7 +50,7 @@ export function openCamp(app: App): void {
         const active = !!ch && s.activeIds.includes(ch.id);
         const tree = DIALOGUE_BY_ID[`camp_${cs.id}`];
         return h('div', { class: 'panel camp-card' },
-          h('div', { class: 'rel-head' }, h('span', { html: portraitSvg({ hue: d.hue, sigil: CLASS_BY_ID[d.classId].sigil, initials: d.name.split(' ').map((p) => p[0]).join(''), size: 56 }) }),
+          h('div', { class: 'rel-head' }, h('span', { html: portraitSvg({ hue: d.hue, sigil: CLASS_BY_ID[d.classId].sigil, initials: d.name.split(' ').map((p) => p[0]).join(''), size: 56, companionId: d.id }) }),
             h('div', null, h('b', null, d.name), h('div', { class: 'muted small' }, `${d.title}${active ? ' · in party' : ' · resting at camp'}`))),
           h('div', { class: 'small' }, relationshipSummary(cs)),
           h('div', { class: 'row' },

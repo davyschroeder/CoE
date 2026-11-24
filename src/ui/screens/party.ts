@@ -33,7 +33,7 @@ export function openParty(app: App, after?: () => void): void {
         const d = COMPANION_BY_ID[id], cs = s.companions[id];
         const others = activeCompanionIds(s).filter((x) => x !== id);
         return h('div', { class: 'panel rel' },
-          h('div', { class: 'rel-head' }, h('span', { html: portraitSvg({ hue: d.hue, sigil: CLASS_BY_ID[d.classId].sigil, initials: d.name.split(' ').map((p) => p[0]).join(''), size: 48 }) }),
+          h('div', { class: 'rel-head' }, h('span', { html: portraitSvg({ hue: d.hue, sigil: CLASS_BY_ID[d.classId].sigil, initials: d.name.split(' ').map((p) => p[0]).join(''), size: 48, companionId: d.id }) }),
             h('div', null, h('b', null, d.name), h('div', { class: 'muted small' }, d.title), h('div', { class: 'small' }, `Mood: ${cs.mood >= 2 ? 'good' : cs.mood <= -3 ? 'bad' : 'steady'} · Stress ${Math.round(cs.stress)}/10`))),
           h('div', { class: 'small' }, relationshipSummary(cs)),
           others.length ? h('div', { class: 'small muted' }, 'With others: ', others.map((x) => `${COMPANION_BY_ID[x].name.split(' ')[0]} ${bondWord(cs.bonds[x] ?? 0)}`).join(', ')) : null,

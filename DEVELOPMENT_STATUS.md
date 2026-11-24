@@ -1,6 +1,6 @@
 # Development Status
 
-_Last updated: build v0.3 (Phases 1–4 complete: Prologue and Act I)._
+_Last updated: build v0.3.1 (Phases 1–4 complete: Prologue and Act I; Aetherfall Visual Edition integrated)._
 
 This file is the source of truth for **what actually works**. Anything not listed as implemented is not in the game yet.
 
@@ -111,6 +111,10 @@ Content lives in `src/data/act1/` (one `ContentModule` per region, merged into t
 - **Engine**: milestone XP on quest stages (`stages.<id>.xp`, granted once); `EncounterDef.surpriseIf` (story-driven surprise); a short-rest beat between the Dome's two fights; `shortRest` over-healing fixed (hit-die healing was accumulated twice); the map generator is now in the repo (`tools/mapgen.py`, with walkability and reachability checks); Act I content split into per-region chunks.
 - **Balance** (AI-vs-AI simulation, level 6, Adventurer): the ambush is won 95–100% of the time; Ossaryx after the ambush and the short rest about 72% on average over 10 party/class combinations (best 11–12/12; an all-caster party without a frontline, e.g. Vaelis/Nima/Kael with a wizard, only ~2/12). The main path awards enough XP for level 4 at the start, 5 after the Woods, 6 at the Dome.
 
+## Aetherfall Visual Edition (v0.3.1)
+
+Painted title art, ten companion portraits, an illustrated map of Elyndra and a new interface theme, made with ChatGPT and integrated into the source (`src/visual-edition.css`, `src/assets/visuals/`, portraits via `companionArt()` in `src/ui/portraits.ts`). Integration fixed six problems in the delivered version, two of them game-breaking (character creation could not be completed; the exploration/combat HUD collapsed). Details and the list of fixes: `docs/VISUAL_EDITION.md`. Checked in Chromium: menu, all creation steps, exploration HUD, world map, dialogue and combat at 1600, 1366 and 1280 px wide.
+
 ## Known limitations / honest notes
 
 - **The Prologue and Act I are content-complete; Acts II–VI are not built.** After the Act I epilogue you can keep exploring the Act I regions; Act II regions on the world map stay locked.
@@ -125,6 +129,7 @@ Content lives in `src/data/act1/` (one `ContentModule` per region, merged into t
 - Romance is limited to optional hints in camp talks.
 - Combat arenas use the exploration map; very large maps may produce wide arenas.
 - Audio is procedural and simple; there are no recorded music/voice assets.
+- Art: only the title screen, companion portraits and the world map are painted. Exploration and combat boards, tokens, NPC and player portraits are still procedural.
 - Dutch localisation covers only the main UI strings; all narrative text is English.
 
 ## Next development priority
