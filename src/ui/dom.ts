@@ -67,20 +67,34 @@ export function toast(text: string, kind: 'info' | 'good' | 'bad' | 'quest' | 'r
 
 /** Lightweight tooltip system: any element with data-tip shows it on hover. */
 export function installTooltips(): void {
-  const tip = h('div', { id: 'tooltip' });
+  const tip = h('div', { id: 'tooltip', role: 'tooltip' });
   document.body.appendChild(tip);
-  document.addEventListener('mouseover', (e) => {
-    const t = (e.target as HTMLElement).closest?.('[data-tip]') as HTMLElement | null;
-    if (!t) { tip.style.display = 'none'; return; }
-    tip.textContent = t.dataset.tip ?? '';
-    tip.style.display = 'block';
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (tip.style.display !== 'block') return;
-    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, e.clientX + 14);
-    const y = Math.min(window.innerHeight - tip.offsetHeight - 12, e.clientY + 14);
+  // Hover tooltips are for mouse pointers only: a tap on a touch screen would leave one stuck on screen.
+  let anchor: HTMLElement | null = null;
+  const hide = () => { anchor = null; tip.style.display = 'none'; };
+  const place = (cx: number, cy: number) => {
+    const x = Math.max(8, Math.min(window.innerWidth - tip.offsetWidth - 12, cx + 14));
+    const y = Math.max(8, Math.min(window.innerHeight - tip.offsetHeight - 12, cy + 14));
     tip.style.left = `${x}px`; tip.style.top = `${y}px`;
+  };
+  document.addEventListener('pointerover', (e) => {
+    const t = e.pointerType === 'mouse' ? (e.target as HTMLElement).closest?.('[data-tip]') as HTMLElement | null : null;
+    if (!t || !t.dataset.tip) { hide(); return; }
+    anchor = t;
+    tip.textContent = t.dataset.tip;
+    tip.style.display = 'block';
+    place(e.clientX, e.clientY);
   });
+  document.addEventListener('pointermove', (e) => {
+    if (!anchor) return;
+    if (e.pointerType !== 'mouse' || !anchor.isConnected) { hide(); return; }
+    place(e.clientX, e.clientY);
+  });
+  // Clicking, typing or scrolling usually changes what is under the pointer: drop the tooltip.
+  for (const ev of ['pointerdown', 'keydown', 'wheel', 'scroll']) document.addEventListener(ev, hide, { capture: true, passive: true });
+  document.addEventListener('pointerleave', hide);
+  // The hovered element can vanish without any pointer event (dialogue advances, screens change).
+  new MutationObserver(() => { if (anchor && !anchor.isConnected) hide(); }).observe(document.body, { childList: true, subtree: true });
 }
 
 export function bar(value: number, max: number, cls = 'hp', label?: string): HTMLElement {
