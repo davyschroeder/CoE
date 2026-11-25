@@ -17,6 +17,7 @@ import {
   drawIsoHighlight, drawIsoToken, drawIsoBuilding, hasIsoProp, type IsoView,
 } from '../render/isometric';
 import { mapArchitecture } from '../render/mapArchitecture';
+import { walkToward, WALK_MS_PER_TILE, COMBAT_WALK_MS } from '../render/motion';
 import { charPortrait } from '../portraits';
 import { settings, cpuDelay } from '../../core/settings';
 import { playMusic, sfx } from '../../audio/audio';
@@ -707,11 +708,7 @@ export class CombatScreen implements Screen {
       const d = this.disp.get(c.id) ?? { x: c.x, y: c.y, queue: [] };
       if (!this.disp.has(c.id)) this.disp.set(c.id, d);
       const target = d.queue[0] ?? { x: c.x, y: c.y };
-      const amount = cpuDelay() === 0 ? 1 : 1 - Math.pow(0.65, dt / 16.67);
-      d.x += (target.x - d.x) * amount; d.y += (target.y - d.y) * amount;
-      if (Math.abs(target.x - d.x) < 0.05 && Math.abs(target.y - d.y) < 0.05) {
-        d.x = target.x; d.y = target.y; if (d.queue.length) d.queue.shift();
-      }
+      if (walkToward(d, target.x, target.y, dt, COMBAT_WALK_MS[settings().cpuSpeed] ?? WALK_MS_PER_TILE) && d.queue.length) d.queue.shift();
       const p = isoPoint(d.x, d.y, view);
       p.y -= isoElevation(this.cb.tileChar(c.x, c.y), ts);
       return { c, d, p };

@@ -35,6 +35,7 @@ import { openSaveLoad } from './saveLoad';
 import { openSettings } from './settingsView';
 import { openCamp } from './camp';
 import { rollDie } from '../../core/dice';
+import { walkToward, WALK_MS_PER_TILE } from '../render/motion';
 
 interface Float { x: number; y: number; text: string; color: string; born: number; }
 
@@ -238,7 +239,16 @@ export class ExploreScreen implements Screen {
     if (this.app.busy) return;
     const k = e.key.toLowerCase();
     const dirs: Record<string, [number, number]> = { arrowup: [-1, -1], w: [-1, -1], arrowdown: [1, 1], s: [1, 1], arrowleft: [-1, 1], a: [-1, 1], arrowright: [1, -1], d: [1, -1], q: [-1, 0], e: [0, -1], z: [0, 1], x: [1, 0] };
-    if (dirs[k]) { this.path = []; this.tryStep(this.s.location.x + dirs[k][0], this.s.location.y + dirs[k][1]); e.preventDefault(); return true; }
+    if (dirs[k]) {
+      e.preventDefault();
+      // Held keys repeat quickly; keep the same walking pace as click-to-move.
+      const now = performance.now();
+      if (now - this.stepTimer < WALK_MS_PER_TILE * 0.85) return true;
+      this.stepTimer = now;
+      this.path = []; this.pendingInteract = null;
+      this.tryStep(this.s.location.x + dirs[k][0], this.s.location.y + dirs[k][1]);
+      return true;
+    }
     switch (k) {
       case 'g': this.toggleGrid(); break;
       case 'home': this.centerCamera(); e.preventDefault(); break;
@@ -367,18 +377,25 @@ export class ExploreScreen implements Screen {
 
   // ─────────────────────── Movement
 
+  private leaderArrived(): boolean {
+    const leader = activeParty(this.s)[0];
+    const a = leader && this.actors.get(leader.id);
+    return !a || (Math.abs(a.x - this.s.location.x) < 0.05 && Math.abs(a.y - this.s.location.y) < 0.05);
+  }
+
   private update(time: number): void {
     if (this.app.busy || document.getElementById('modal-layer')!.children.length) return;
-    if (this.path.length && time - this.stepTimer > 110) {
+    if (this.path.length && time - this.stepTimer > WALK_MS_PER_TILE) {
       this.stepTimer = time;
       const next = this.path.shift()!;
       const moved = this.tryStep(next.x, next.y);
       if (!moved) { this.path = []; this.pendingInteract = null; }
-      else if (!this.path.length && this.pendingInteract) {
-        const o = this.pendingInteract;
-        this.pendingInteract = null;
-        this.interact(o);
-      }
+    }
+    // Talk or interact once the leader has actually walked up, not when the last step is taken.
+    if (!this.path.length && this.pendingInteract && this.leaderArrived()) {
+      const o = this.pendingInteract;
+      this.pendingInteract = null;
+      this.interact(o);
     }
     // smooth camera
     this.camX += (this.s.location.x - this.camX) * 0.2;
@@ -632,8 +649,7 @@ export class ExploreScreen implements Screen {
       if (!a || Math.hypot(a.x - tx, a.y - ty) > 6) { a = { x: tx, y: ty, facing: 1 }; this.actors.set(c.id, a); }
       const dx = tx - a.x, dy = ty - a.y;
       if (Math.abs(dx - dy) > .01) a.facing = dx - dy < 0 ? -1 : 1;
-      const ease = 1 - Math.exp(-dt / 50);
-      a.x += dx * ease; a.y += dy * ease;
+      walkToward(a, tx, ty, dt);
       const p = isoPoint(a.x, a.y, view);
       p.y -= isoElevation(tileAt(state, m, target.x, target.y), tw);
       partyPoints.push(p);
