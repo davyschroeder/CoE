@@ -101,6 +101,8 @@ tests/         Vitest suites, incl. end-to-end Prologue and Act I playthroughs a
 
 ## Documentation
 
+- `UPDATE_RULES.md` — **read first when making an update** (rules learned from earlier updates, and the checks to run)
+
 - `STORY_BIBLE.md` — world, history, factions, companions, the six-act plot and endings (canon reference)
 - `GAME_DESIGN.md` — rules, systems, AI, content formats and how they fit together
 - `ROADMAP.md` — milestones and completion criteria

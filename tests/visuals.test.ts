@@ -6,6 +6,8 @@ import { NPCS } from '../src/data/npcs';
 import { ACT1 } from '../src/data/act1/index';
 import { companionArtId, companionPortrait, npcPortrait, portraitSvg, PLAYER_PORTRAITS } from '../src/ui/portraits';
 
+const ALL_CSS = import.meta.glob('../src/**/*.css', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
+const ALL_TS = import.meta.glob('../src/**/*.ts', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
 const ASSETS = new Set(Object.keys(import.meta.glob('../src/assets/visuals/*')).map((p) => p.replace('../src/', '')));
 const artOf = (svg: string) => /data-coa-painted="([^"]+)"/.exec(svg)?.[1];
 
@@ -35,5 +37,17 @@ describe('visual identity', () => {
     for (const [, url] of css.matchAll(/url\('\.\/([^']+)'\)/g)) expect(ASSETS.has(url), url).toBe(true);
     expect(css).not.toMatch(/https?:/);
     expect(css).not.toMatch(/(^|[}\s,])\.(panel|screen|creation|explore|combat|hud-[a-z]+|cb-[a-z]+|dialogue)\s*\{[^}]*position\s*:/);
+  });
+
+  it('assets are referenced relatively, so the game runs from any folder (zip, artifact, sub-path)', () => {
+    for (const [file, text] of Object.entries(ALL_CSS)) expect(text, file).not.toMatch(/url\(\s*['"]?\//);
+    for (const [file, text] of Object.entries(ALL_TS)) expect(text, file).not.toMatch(/['"`]\/(art|visuals|assets)\//);
+  });
+
+  it('no stylesheet repositions screens or HUD panels', () => {
+    for (const [file, text] of Object.entries(ALL_CSS)) {
+      if (file.endsWith('/styles.css') || file.endsWith('/isometric-edition.css')) continue; // the layouts that own positioning
+      expect(text, file).not.toMatch(/(^|[}\s,])\.(panel|screen|creation|explore|combat|hud-[a-z]+|cb-[a-z]+|dialogue)\s*\{[^}]*position\s*:/);
+    }
   });
 });
