@@ -1,6 +1,7 @@
 import type { Character } from '../../engine/types';
 import type { Tileset } from '../../data/maps/types';
 import { MATERIALS, materialAtlasStatus, drawMaterialPlane } from './materials';
+import type { MiniaturePose } from './miniatureAnimation';
 
 /** A 2:1 diamond camera. Integer world coordinates identify tile centres. */
 export interface IsoView { tileWidth: number; originX: number; originY: number; }
@@ -10,6 +11,7 @@ export interface IsoBuilding { x: number; y: number; w: number; h: number; id?: 
 export interface IsoTokenOptions {
   character?: Character; npcId?: string; role?: string; enemy?: boolean; selected?: boolean;
   dim?: boolean; time?: number; facing?: number; sprite?: CanvasImageSource; down?: boolean; ring?: string;
+  pose?: MiniaturePose;
 }
 
 export function createIsoView(width: number, height: number, camX: number, camY: number, tileWidth: number, offsetY = 0): IsoView {
@@ -801,19 +803,35 @@ function civilianArt(ctx: CanvasRenderingContext2D, id: string, color: string, p
 /** Character art is anchored by the base at (px, py); letters are never painted. */
 export function drawIsoToken(ctx: CanvasRenderingContext2D, px: number, py: number, width: number, color: string, glyph: string, opts: IsoTokenOptions = {}): void {
   const c = opts.character, time = opts.time ?? 0;
-  const down = opts.down || (c && c.hp <= 0), faint = opts.dim || down;
+  const down = opts.down ?? !!(c && c.hp <= 0), faint = opts.dim || down;
+  const pose = opts.pose, idleTime = pose === undefined && !down ? time : 0;
   ctx.save();
   if (faint) ctx.globalAlpha *= down ? .43 : .57;
   const ring = opts.ring ?? (opts.enemy ? '#de7f77' : opts.selected ? '#ffe2a1' : '#8cd3bc');
   ctx.translate(px, py);
-  const pulse = .5 + Math.sin(time / 750) * .15;
+  const pulse = .5 + Math.sin(idleTime / 750) * .15;
   if (opts.selected) lightGlow(ctx, 0, -width * .05, width * .55, `rgba(221,191,111,${pulse * .15})`);
   ctx.beginPath(); ctx.ellipse(0, width * .025, width * .39, width * .17, 0, 0, TAU); ctx.fillStyle = 'rgba(2,9,16,.47)'; ctx.fill();
   ctx.strokeStyle = ring; ctx.lineWidth = opts.selected ? 2.5 : 1.5; ctx.stroke();
+  // Pose the miniature about its feet; its tile ring and contact shadow stay anchored.
+  ctx.save();
+  if (pose) {
+    ctx.globalAlpha *= Math.max(0, Math.min(1, pose.alpha ?? 1));
+    ctx.translate((pose.offsetX ?? 0) * width, ((pose.offsetY ?? 0) - (pose.lift ?? 0)) * width);
+    ctx.rotate(pose.rotation ?? 0);
+    ctx.scale(pose.scaleX ?? 1, pose.scaleY ?? 1);
+    if (pose.glow && pose.glow.strength > 0) {
+      ctx.save(); ctx.globalAlpha *= Math.min(1, pose.glow.strength) * .34;
+      lightGlow(ctx, 0, -width * .34, width * .63, pose.glow.color);
+      ctx.strokeStyle = pose.glow.color; ctx.lineWidth = Math.max(1, width * .018);
+      ctx.beginPath(); ctx.ellipse(0, -width * .13, width * (.24 + pose.glow.strength * .08), width * .11, 0, 0, TAU); ctx.stroke();
+      ctx.restore();
+    }
+  }
   const civilian = civilianIndex(c, opts.role, opts.npcId);
   const civilianAtlas = civilian !== null ? getArtAtlas('civilians') : null;
   const atlas = getArtAtlas('miniatures'), idx = miniatureIndex(c, opts.role, opts.npcId, glyph);
-  const bob = down ? 0 : Math.sin(time / 700 + hash(c?.name.length ?? 0, idx ?? 0) * TAU) * width * .005;
+  const bob = down || pose !== undefined ? 0 : Math.sin(time / 700 + hash(c?.name.length ?? 0, idx ?? 0) * TAU) * width * .005;
   if (opts.sprite) {
     ctx.drawImage(opts.sprite, -width * .47, -width * .84 + bob, width * .94, width * .88);
   } else if (civilianAtlas && civilian !== null) {
@@ -829,11 +847,12 @@ export function drawIsoToken(ctx: CanvasRenderingContext2D, px: number, py: numb
     ctx.drawImage(atlas, (idx % 4) * sw, Math.floor(idx / 4) * sh, sw, sh, -dw / 2, -dh + width * .115 + bob, dw, dh);
   } else {
     ctx.scale(width, width);
-    if (/crawler/.test(c?.templateId ?? opts.npcId ?? '')) crawlerArt(ctx, time / 700);
-    else if (/bellwarden|halric/.test(c?.templateId ?? opts.npcId ?? '')) bellwardenArt(ctx, time / 900);
-    else civilianArt(ctx, opts.npcId ?? c?.name.toLowerCase() ?? '', color, time / 700);
+    if (/crawler/.test(c?.templateId ?? opts.npcId ?? '')) crawlerArt(ctx, idleTime / 700);
+    else if (/bellwarden|halric/.test(c?.templateId ?? opts.npcId ?? '')) bellwardenArt(ctx, idleTime / 900);
+    else civilianArt(ctx, opts.npcId ?? c?.name.toLowerCase() ?? '', color, idleTime / 700);
     ctx.scale(1 / width, 1 / width);
   }
+  ctx.restore();
   // A subtle front edge keeps team allegiance legible even under large silhouettes.
   ctx.beginPath(); ctx.ellipse(0, width * .025, width * .39, width * .17, 0, .08, Math.PI - .08);
   ctx.strokeStyle = ring; ctx.lineWidth = opts.selected ? 2 : 1; ctx.stroke();

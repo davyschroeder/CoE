@@ -18,16 +18,18 @@ import {
 } from '../render/isometric';
 import { mapArchitecture } from '../render/mapArchitecture';
 import { walkToward, WALK_MS_PER_TILE, COMBAT_WALK_MS } from '../render/motion';
+import { actionDuration, combinePoses, fallenPose, walkPose, type MiniatureAction } from '../render/miniatureAnimation';
+import { CombatAnimationQueue, orderPresentationEvents, type CombatAnimationStep, type CombatClip, type CombatWalkHooks } from '../render/combatAnimation';
 import { charPortrait } from '../portraits';
 import { settings, cpuDelay } from '../../core/settings';
 import { playMusic, sfx } from '../../audio/audio';
-import { sleep } from '../dom';
 import { openParty } from './party';
 import { t } from '../../i18n/index';
 
 interface FloatText { x: number; y: number; text: string; color: string; born: number; big?: boolean; }
-interface Flash { tiles: { x: number; y: number }[]; color: string; born: number; }
-interface Strike { from: { x: number; y: number }; to: { x: number; y: number }; born: number; hit: boolean; crit: boolean; }
+interface Flash { tiles: { x: number; y: number }[]; color: string; born: number; duration: number; }
+interface Strike { from: { x: number; y: number }; to: { x: number; y: number }; born: number; duration: number; hit: boolean; crit: boolean; }
+interface ActionContext { actorId: string; action?: ActionDef; target?: Target; }
 
 export class CombatScreen implements Screen {
   el: HTMLElement;
@@ -49,13 +51,18 @@ export class CombatScreen implements Screen {
   private gridVisible = true;
   private drag: { x: number; y: number; panX: number; panY: number } | null = null;
   private suppressClick = false;
-  private lastFrame = 0;
   private actionReserve = 190;
   private strikes: Strike[] = [];
-  private impactUntil = new Map<string, number>();
+  private animations = new CombatAnimationQueue();
+  private retained = new Set<string>();
+  private fallen = new Set<string>();
+  private fallDirection = new Map<string, number>();
+  private disposed = false;
+  private presentationTime = 0;
+  private waits = new Set<() => void>();
   private tools: HTMLElement;
   private raf = 0;
-  private disp = new Map<string, { x: number; y: number; queue: { x: number; y: number }[] }>();
+  private disp = new Map<string, { x: number; y: number; queue: { x: number; y: number }[]; distance?: number; direction?: { x: number; y: number }; moving?: boolean }>();
   private floats: FloatText[] = [];
   private flashes: Flash[] = [];
   private selected: ActionDef | null = null;
@@ -65,6 +72,27 @@ export class CombatScreen implements Screen {
   private done = false;
   private reachCache: Map<string, any> | null = null;
   private pathPreview: { key: string; path: { x: number; y: number }[] | null; provokes: boolean } | null = null;
+  private visibilityChanged = () => { this.tickPresentation(performance.now()); };
+  private walkHooks: CombatWalkHooks = {
+    startWalk: (id, path) => {
+      const d = this.disp.get(id);
+      if (d) { d.queue = path; d.moving = path.length > 0; }
+    },
+    advanceWalk: (id, dt) => {
+      const d = this.disp.get(id), target = d?.queue[0];
+      if (!d || !target) { if (d) d.moving = false; return true; }
+      const dx = target.x - d.x, dy = target.y - d.y, ox = d.x, oy = d.y;
+      d.direction = { x: (dx - dy) / 2, y: (dx + dy) / 4 };
+      if (walkToward(d, target.x, target.y, dt, COMBAT_WALK_MS[settings().cpuSpeed] ?? WALK_MS_PER_TILE)) d.queue.shift();
+      d.distance = (d.distance ?? 0) + Math.max(Math.abs(d.x - ox), Math.abs(d.y - oy));
+      d.moving = d.queue.length > 0;
+      return !d.moving;
+    },
+    skipWalk: (id, path) => {
+      const d = this.disp.get(id), last = path[path.length - 1];
+      if (d) { if (last) { d.x = last.x; d.y = last.y; } d.queue = []; d.moving = false; }
+    },
+  };
 
   constructor(private app: App, encounterId: string, ambush: 'party' | 'enemy' | undefined, private onDone: (r: 'victory' | 'defeat' | 'fled') => void) {
     this.cb = new Combat(app.state!, encounterId, { ambush });
@@ -113,21 +141,32 @@ export class CombatScreen implements Screen {
     }, { passive: false });
     this.canvas.addEventListener('click', (e) => this.onClick(e));
     this.canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); this.selected = null; this.renderActions(); });
-    for (const c of this.cb.combatants) this.disp.set(c.id, { x: c.x, y: c.y, queue: [] });
+    for (const c of this.cb.combatants) {
+      this.disp.set(c.id, { x: c.x, y: c.y, queue: [] });
+      if (c.char.hp <= 0) this.fallen.add(c.id);
+    }
   }
 
   mount(): void {
+    document.addEventListener('visibilitychange', this.visibilityChanged);
     playMusic(this.cb.encounter.music ?? 'combat');
     this.consume(this.cb.flush());
     const first = this.cb.combatants.find((c) => c.side === 'party' && c.char.companionId);
     if (first) { const b = bark(this.app.state!, first.char.companionId!, 'start'); if (b) this.barkFloat(first, b); }
-    const loop = (time: number) => { this.draw(time); this.raf = requestAnimationFrame(loop); };
+    const loop = (time: number) => { if (this.disposed) return; this.tickPresentation(time); this.draw(time); this.raf = requestAnimationFrame(loop); };
     this.raf = requestAnimationFrame(loop);
     this.renderAll();
     this.advance();
   }
 
-  unmount(): void { cancelAnimationFrame(this.raf); }
+  unmount(): void {
+    this.disposed = true;
+    cancelAnimationFrame(this.raf);
+    document.removeEventListener('visibilitychange', this.visibilityChanged);
+    this.animations.clear();
+    for (const d of this.disp.values()) { d.queue = []; d.moving = false; }
+    for (const finish of [...this.waits]) finish();
+  }
 
   onKey(e: KeyboardEvent): boolean | void {
     const k = e.key.toLowerCase();
@@ -146,61 +185,125 @@ export class CombatScreen implements Screen {
   }
 
   private get cur(): Combatant { return this.cb.current(); }
-  private isPlayerTurn(): boolean { return !this.cb.over && this.cur.char.kind === 'player' && this.cur.char.hp > 0 && !this.running; }
+  private isPlayerTurn(): boolean { return !this.disposed && !this.animations?.busy && !this.cb.over && this.cur.char.kind === 'player' && this.cur.char.hp > 0 && !this.running; }
 
   // ─────────────────────── Turn driver
 
   private async advance(): Promise<void> {
-    if (this.running) return;
+    if (this.running || this.disposed) return;
     this.running = true;
     try {
-      while (!this.cb.over) {
+      await this.waitAnim();
+      while (!this.cb.over && !this.disposed) {
         const c = this.cur;
         this.renderAll();
         if (c.char.kind === 'player' && c.char.hp > 0 && (c.action || c.bonus || c.movement > 0 || c.attacksLeft > 0)) break;
         if (c.char.kind === 'player') {
           // Player is down or has nothing left to do.
           if (c.char.hp > 0 && !settings().autoEndTurn) break;
-          await sleep(c.char.hp > 0 ? 200 : 600);
+          if (!await this.pause(cpuDelay() === 0 ? 0 : c.char.hp > 0 ? 200 : 600)) return;
           this.consume(this.cb.endTurn());
+          await this.waitAnim();
           continue;
         }
         // CPU turn (companion or enemy)
-        await sleep(cpuDelay() * 0.6);
-        for (let i = 0; i < 14 && !this.cb.over; i++) {
+        if (!await this.pause(cpuDelay() * 0.6)) return;
+        for (let i = 0; i < 14 && !this.cb.over && !this.disposed; i++) {
           if (c.char.hp <= 0) break;
           const ev = aiStep(this.cb, c);
           if (!ev) break;
-          this.consume(ev);
+          this.consume(ev, { actorId: c.id });
           this.renderAll();
-          await sleep(cpuDelay());
+          if (!await this.pause(cpuDelay())) return;
           await this.waitAnim();
         }
-        if (this.cb.over) break;
+        if (this.cb.over || this.disposed) break;
         this.consume(this.cb.endTurn());
+        await this.waitAnim();
       }
     } finally {
       this.running = false;
     }
+    if (this.disposed) return;
     this.renderAll();
     if (this.cb.over) this.finish();
   }
 
   private waitAnim(): Promise<void> {
     return new Promise((res) => {
-      const check = () => { if ([...this.disp.values()].every((d) => !d.queue.length) || cpuDelay() === 0) res(); else setTimeout(check, 30); };
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = () => { if (timer) clearTimeout(timer); this.waits.delete(finish); res(); };
+      this.waits.add(finish);
+      const check = () => {
+        if (this.disposed) { finish(); return; }
+        // The timer advances presentation even when the canvas is zero-sized or RAF is paused.
+        this.tickPresentation(performance.now());
+        if (!this.animations.busy && [...this.disp.values()].every((d) => !d.queue.length)) finish();
+        else timer = setTimeout(check, 16);
+      };
       check();
     });
   }
 
-  private endTurn(): void {
+  private async pause(ms: number): Promise<boolean> {
+    if (this.disposed) return false;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(finish, Math.max(0, ms));
+      const waits = this.waits;
+      function finish() { clearTimeout(timer); waits.delete(finish); resolve(); }
+      waits.add(finish);
+    });
+    // Hidden pages finish visual work, then pause the turn driver until visible.
+    if (!this.disposed && document.hidden) await new Promise<void>((resolve) => {
+      const finish = () => { document.removeEventListener('visibilitychange', visible); this.waits.delete(finish); resolve(); };
+      const visible = () => { if (!document.hidden || this.disposed) finish(); };
+      this.waits.add(finish); document.addEventListener('visibilitychange', visible);
+    });
+    return !this.disposed;
+  }
+
+  private reducedMotion(): boolean {
+    return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  private tickPresentation(time: number): void {
+    if (this.disposed) return;
+    const instant = settings().cpuSpeed === 'instant' || (typeof document !== 'undefined' && document.hidden);
+    const dt = Math.min(50, Math.max(0, this.presentationTime ? time - this.presentationTime : 0));
+    this.presentationTime = time;
+    this.animations.tick(dt, this.walkHooks, instant);
+    if (!this.animations.busy) {
+      // A natural-20 death save revives through a text event, without a heal event.
+      for (const c of this.cb.combatants) if (c.char.hp > 0) this.fallen.delete(c.id);
+    }
+    if (instant) {
+      for (const c of this.cb.combatants) {
+        const d = this.disp.get(c.id);
+        if (d) { d.x = c.x; d.y = c.y; d.queue = []; d.moving = false; }
+      }
+      this.floats = []; this.flashes = []; this.strikes = [];
+    }
+  }
+
+  private async endTurn(): Promise<void> {
+    if (this.running || this.disposed) return;
+    this.running = true;
     this.selected = null;
-    this.consume(this.cb.endTurn());
+    try {
+      await this.waitAnim();
+      if (!await this.pause(0)) return;
+      this.consume(this.cb.endTurn());
+      this.renderAll();
+      await this.waitAnim();
+    } finally { this.running = false; }
+    if (this.disposed) return;
     this.advance();
   }
 
-  private finish(): void {
-    if (this.done) return;
+  private async finish(): Promise<void> {
+    if (this.done || this.disposed) return;
+    await this.waitAnim();
+    if (!await this.pause(0) || this.done) return;
     this.done = true;
     const s = this.app.state!;
     const r = this.cb.over!;
@@ -226,36 +329,31 @@ export class CombatScreen implements Screen {
 
   // ─────────────────────── Events → visuals
 
-  private consume(events: CombatEvent[]): void {
+  private consume(events: CombatEvent[], context?: ActionContext): void {
+    if (this.disposed) return;
     const s = this.app.state!;
+    // Companion memory/chatter keeps its original call order. Only drawing and
+    // sound are scheduled below; these callbacks never execute game actions.
     for (const e of events) {
       switch (e.type) {
-        case 'move': { const d = this.disp.get(e.id); if (d) d.queue.push(...e.path); break; }
+        case 'move': break;
         case 'attack': {
-          const t = this.cb.get(e.targetId);
-          if (t) this.floats.push({ x: t.x, y: t.y, text: e.hit ? (e.crit ? 'CRIT!' : '') : 'miss', color: e.crit ? '#ffd24a' : '#cfd6e6', born: performance.now(), big: e.crit });
-          sfx(e.hit ? (e.crit ? 'crit' : 'hit') : 'miss');
           const a = this.cb.get(e.attackerId);
-          if (a && t) {
-            this.strikes.push({ from: { x: a.x, y: a.y }, to: { x: t.x, y: t.y }, born: performance.now(), hit: e.hit, crit: e.crit });
-            if (e.hit) this.impactUntil.set(t.id, performance.now() + 260);
-          }
           if (a?.char.companionId && e.crit) { const b = bark(s, a.char.companionId, 'crit'); if (b) this.barkFloat(a, b); }
           if (a?.char.companionId && !e.hit && Math.random() < 0.3) { const b = bark(s, a.char.companionId, 'miss'); if (b) this.barkFloat(a, b); }
           break;
         }
         case 'damage': {
           const t = this.cb.get(e.targetId);
-          if (t && e.amount > 0) this.floats.push({ x: t.x, y: t.y, text: `-${e.amount}${e.note ? ` (${e.note})` : ''}`, color: '#ff6b5a', born: performance.now() + 120 });
           if (t?.char.companionId && t.char.hp > 0 && t.char.hp < t.char.maxHp * 0.3 && Math.random() < 0.5) { const b = bark(s, t.char.companionId, 'lowHp'); if (b) this.barkFloat(t, b); }
           break;
         }
-        case 'heal': { const t = this.cb.get(e.targetId); if (t) this.floats.push({ x: t.x, y: t.y, text: `+${e.amount}`, color: '#7fe07f', born: performance.now() }); sfx('heal'); break; }
-        case 'aoe': this.flashes.push({ tiles: e.tiles, color: e.color, born: performance.now() }); sfx(e.actionId === 'explosion' ? 'explosion' : 'spell'); break;
-        case 'explosion': sfx('explosion'); break;
+        case 'heal': break;
+        case 'aoe': break;
+        case 'explosion': break;
         case 'down': {
           const t = this.cb.get(e.targetId);
-          sfx('down');
+          if (t) this.retained.add(t.id);
           if (t?.side === 'enemy') {
             const killer = this.cb.combatants.find((c) => c.side === 'party' && c.char.companionId && c.id === this.cb.current().id);
             if (killer) { const b = bark(s, killer.char.companionId!, 'kill'); if (b) this.barkFloat(killer, b); }
@@ -274,9 +372,160 @@ export class CombatScreen implements Screen {
         case 'condition': break;
       }
     }
+    this.queueEvents(orderPresentationEvents(events, context?.actorId ?? null), context);
+    this.tickPresentation(performance.now());
     this.reachCache = null;
     this.pathPreview = null;
     this.renderLog();
+  }
+
+  private duration(kind: MiniatureAction): number { return actionDuration(kind, settings().cpuSpeed, this.reducedMotion()); }
+
+  private displayPoint(id: string): { x: number; y: number } {
+    const p = this.disp.get(id) ?? this.cb.get(id);
+    return { x: p?.x ?? 0, y: p?.y ?? 0 };
+  }
+
+  private addClip(step: CombatAnimationStep, id: string, kind: MiniatureAction, delay = 0,
+    fromId?: string, target?: string | { x: number; y: number }, color?: string): CombatClip {
+    const clip: CombatClip = { id, kind, delay, duration: this.duration(kind), direction: { x: 1, y: .15 }, color };
+    (step.clips ??= []).push(clip);
+    step.duration = Math.max(step.duration, delay + clip.duration);
+    const start = step.start;
+    step.start = (instant) => {
+      start?.(instant);
+      if (fromId && target) {
+        const a = this.displayPoint(fromId), b = typeof target === 'string' ? this.displayPoint(target) : target;
+        clip.direction = { x: ((b.x - a.x) - (b.y - a.y)) / 2, y: ((b.x - a.x) + (b.y - a.y)) / 4 };
+      } else if (kind === 'fall') clip.direction = { x: this.fallDirection.get(id) ?? 1, y: 0 };
+      if (kind === 'hit') this.fallDirection.set(id, clip.direction.x || 1);
+      if (kind === 'fall') this.fallen.delete(id);
+    };
+    return clip;
+  }
+
+  private queueEvents(events: CombatEvent[], context?: ActionContext): void {
+    const actorId = context?.actorId ?? this.cur.id;
+    const actor = this.cb.get(actorId);
+    const castActors = new Set<string>();
+    const plannedDown = new Set(this.fallen);
+    let impact: { step: CombatAnimationStep; at: number; source?: string } | null = null;
+    let fall: { owner: CombatAnimationStep | null; step: CombatAnimationStep } | null = null;
+    const requested = context?.target;
+    const aim = requested ? ('id' in requested ? requested.id : requested) : undefined;
+    const cast = (id: string, action: ActionDef, target = aim) => {
+      if (castActors.has(id)) return;
+      const step: CombatAnimationStep = { duration: 0 };
+      this.addClip(step, id, 'cast', 0, id, target, action.heal ? '#a6e6bb' : '#b5caff');
+      this.animations.enqueue(step); castActors.add(id); impact = null;
+    };
+    for (const e of events) {
+      if (e.type === 'text') {
+        // Actor identity is captured before the rules call; the engine's cast
+        // message supplies only the action name, including CPU heals and buffs.
+        const action = actor && Object.values(ACTION_BY_ID).find(a => a.kind === 'spell' && e.text.startsWith(`${actor.char.name} casts ${a.name}`));
+        if (action) cast(actorId, action);
+        continue;
+      }
+      if (e.type === 'move') {
+        this.animations.enqueue({ duration: 0, walk: { id: e.id, path: e.path.map(p => ({ ...p })) } });
+        impact = null; fall = null;
+        continue;
+      }
+      if (e.type === 'attack') {
+        const action = Object.values(ACTION_BY_ID).find(a => a.name === e.label) ?? context?.action;
+        const magical = action?.kind === 'spell' || action?.attack === 'spell';
+        const step: CombatAnimationStep = { duration: 0, marks: [] };
+        const kind = magical ? 'cast' : 'attack';
+        const alreadyCast = magical && castActors.has(e.attackerId);
+        const duration = this.duration(kind);
+        if (!alreadyCast) this.addClip(step, e.attackerId, kind, 0, e.attackerId, e.targetId);
+        const at = alreadyCast ? this.duration('attack') * .2 : duration * (magical ? .7 : .42);
+        this.addClip(step, e.targetId, e.hit ? 'hit' : 'dodge', at, e.attackerId, e.targetId);
+        step.marks!.push({ at, fire: instant => this.feedback(e, instant) });
+        this.animations.enqueue(step); impact = { step, at, source: e.attackerId }; fall = null;
+        continue;
+      }
+      if (e.type === 'aoe') {
+        const action = ACTION_BY_ID[e.actionId];
+        if (action?.kind === 'spell') cast(actorId, action);
+        const step: CombatAnimationStep = { duration: this.duration('hit'), marks: [{ at: 0, fire: instant => this.feedback(e, instant) }] };
+        this.animations.enqueue(step); impact = { step, at: 0, source: actorId }; fall = null;
+        continue;
+      }
+      if (e.type === 'damage') {
+        if (!impact) {
+          const step: CombatAnimationStep = { duration: 0, marks: [] };
+          this.animations.enqueue(step); impact = { step, at: 0, source: castActors.has(actorId) ? actorId : undefined };
+        }
+        const { step, at, source } = impact;
+        if (e.amount > 0 && !step.clips?.some(c => c.id === e.targetId && c.kind === 'hit')) {
+          this.addClip(step, e.targetId, 'hit', at, source, e.targetId);
+        }
+        (step.marks ??= []).push({ at, fire: instant => this.feedback(e, instant) });
+        continue;
+      }
+      if (e.type === 'down') {
+        if (plannedDown.has(e.targetId)) {
+          this.animations.enqueue({ duration: 0, start: instant => this.feedback(e, instant), finish: () => this.retained.delete(e.targetId) });
+          continue;
+        }
+        plannedDown.add(e.targetId);
+        // Several victims of one area effect fall together, after the shared impact.
+        if (!fall || fall.owner !== (impact?.step ?? null)) {
+          const step: CombatAnimationStep = { duration: 0, marks: [] };
+          fall = { owner: impact?.step ?? null, step }; this.animations.enqueue(step);
+        }
+        const step = fall.step;
+        this.addClip(step, e.targetId, 'fall', 0, impact?.source, e.targetId);
+        step.marks!.push({ at: 0, fire: instant => this.feedback(e, instant) });
+        const finish = step.finish;
+        step.finish = (instant) => { finish?.(instant); this.fallen.add(e.targetId); this.retained.delete(e.targetId); };
+        continue;
+      }
+      if (e.type === 'heal') {
+        if (e.amount > 0) plannedDown.delete(e.targetId);
+        if (context?.action?.kind === 'spell') cast(actorId, context.action);
+        const step: CombatAnimationStep = { duration: this.duration('hit'), marks: [{ at: 0, fire: instant => {
+          if (e.amount > 0) this.fallen.delete(e.targetId);
+          this.feedback(e, instant);
+        } }] };
+        this.addClip(step, e.targetId, 'cast', 0, undefined, undefined, '#a6e6bb');
+        this.animations.enqueue(step); impact = null; fall = null;
+        continue;
+      }
+      if (e.type === 'explosion') this.animations.enqueue({ duration: 0, start: instant => this.feedback(e, instant) });
+    }
+    // Self buffs can legitimately have only a cast log and no damage/attack event.
+    if (context?.action?.kind === 'spell' && !castActors.has(actorId)) cast(actorId, context.action);
+  }
+
+  private feedback(e: CombatEvent, instant: boolean): void {
+    const now = performance.now();
+    switch (e.type) {
+      case 'attack': {
+        sfx(e.hit ? (e.crit ? 'crit' : 'hit') : 'miss');
+        if (instant) break;
+        const p = this.displayPoint(e.targetId);
+        this.floats.push({ ...p, text: e.hit ? (e.crit ? 'CRIT!' : '') : 'miss', color: e.crit ? '#ffd24a' : '#cfd6e6', born: now, big: e.crit });
+        this.strikes.push({ from: this.displayPoint(e.attackerId), to: p, born: now, duration: this.duration('hit'), hit: e.hit, crit: e.crit });
+        break;
+      }
+      case 'damage':
+        if (!instant && e.amount > 0) this.floats.push({ ...this.displayPoint(e.targetId), text: `-${e.amount}${e.note ? ` (${e.note})` : ''}`, color: '#ff6b5a', born: now });
+        break;
+      case 'heal':
+        sfx('heal');
+        if (!instant) this.floats.push({ ...this.displayPoint(e.targetId), text: `+${e.amount}`, color: '#7fe07f', born: now });
+        break;
+      case 'aoe':
+        sfx(e.actionId === 'explosion' ? 'explosion' : 'spell');
+        if (!instant) this.flashes.push({ tiles: e.tiles.map(p => ({ ...p })), color: e.color, born: now, duration: this.duration('cast') });
+        break;
+      case 'down': sfx('down'); break;
+      case 'explosion': sfx('explosion'); break;
+      default: break;
+    }
   }
 
   private barkFloat(c: Combatant, raw: string): void {
@@ -299,6 +548,12 @@ export class CombatScreen implements Screen {
         const d = this.disp.get(c.id) ?? c;
         const p = isoPoint(d.x, d.y, this.view);
         const feet = p.y - isoElevation(this.cb.tileChar(c.x, c.y), this.ts);
+        if (this.fallen?.has(c.id)) {
+          const side = (this.fallDirection?.get(c.id) ?? 1) < 0 ? -1 : 1;
+          const dx = (x - p.x - side * this.ts * .23) / (this.ts * .39);
+          const dy = (y - feet - this.ts * .025) / (this.ts * .25);
+          if (dx * dx + dy * dy <= 1) return { x: c.x, y: c.y };
+        }
         const half = this.ts * (c.char.creatureType === 'dragon' ? 0.43 : 0.27);
         if (Math.abs(x - p.x) < half && y < feet + this.ts * 0.12 && y > feet - this.ts * 0.91) return { x: c.x, y: c.y };
       }
@@ -417,7 +672,7 @@ export class CombatScreen implements Screen {
       if (a) {
         const target = this.resolveTarget(a, p);
         if (!target) { toast('Invalid target.', 'bad', 1500); return; }
-        this.consume(this.cb.perform(c, a.id, target, { slotLevel: this.slotLevel || undefined }));
+        this.consume(this.cb.perform(c, a.id, target, { slotLevel: this.slotLevel || undefined }), { actorId: c.id, action: a, target });
         if (a.id !== 'attack' || c.attacksLeft <= 0) this.selected = null;
         this.afterPlayerAction();
         return;
@@ -427,7 +682,7 @@ export class CombatScreen implements Screen {
       if (occ && occ.side === 'enemy' && occ.char.hp > 0) {
         const atk = ACTION_BY_ID.attack;
         if (this.cb.canUse(c, atk).ok && this.cb.isTargetable(c, atk, occ)) {
-          this.consume(this.cb.perform(c, 'attack', { id: occ.id }));
+          this.consume(this.cb.perform(c, 'attack', { id: occ.id }), { actorId: c.id, action: atk, target: { id: occ.id } });
           this.afterPlayerAction();
         } else toast('Out of reach. Move closer or choose another action.', 'info', 1800);
         return;
@@ -438,7 +693,7 @@ export class CombatScreen implements Screen {
         if (path) {
           const prov = this.cb.provokers(c, path);
           if (prov.length && !confirm(`Moving there provokes ${prov.length} opportunity attack(s) from ${prov.map((x) => x.char.name).join(', ')}. Move anyway?`)) return;
-          this.consume(this.cb.moveAlong(c, path));
+          this.consume(this.cb.moveAlong(c, path), { actorId: c.id });
           this.afterPlayerAction();
         }
       }
@@ -462,9 +717,17 @@ export class CombatScreen implements Screen {
     return null;
   }
 
-  private afterPlayerAction(): void {
+  private async afterPlayerAction(): Promise<void> {
+    if (this.disposed) return;
+    this.running = true;
     this.reachCache = null;
     this.pathPreview = null;
+    this.renderAll();
+    try {
+      await this.waitAnim();
+      if (!await this.pause(0)) return;
+    } finally { this.running = false; }
+    if (this.disposed) return;
     this.renderAll();
     if (this.cb.over) { this.finish(); return; }
     const c = this.cur;
@@ -473,6 +736,7 @@ export class CombatScreen implements Screen {
   }
 
   private chooseAction(a: ActionDef): void {
+    if (!this.isPlayerTurn()) return;
     const c = this.cur;
     if (!this.cb.canUse(c, a).ok) return;
     sfx('click');
@@ -480,7 +744,7 @@ export class CombatScreen implements Screen {
     this.slotLevel = a.kind === 'spell' && (a.level ?? 0) > 0 ? this.slotLevel : 0;
     if (!needsTarget) {
       try {
-        this.consume(this.cb.perform(c, a.id, a.area ? { x: c.x, y: c.y } : undefined));
+        this.consume(this.cb.perform(c, a.id, a.area ? { x: c.x, y: c.y } : undefined), { actorId: c.id, action: a });
         this.afterPlayerAction();
       } catch (e: any) { toast(e.message, 'bad'); }
       return;
@@ -492,6 +756,7 @@ export class CombatScreen implements Screen {
   // ─────────────────────── HUD
 
   private renderAll(): void {
+    if (this.disposed) return;
     this.renderTimeline(); this.renderParty(); this.renderActions(); this.renderLog(); this.renderInfo();
   }
 
@@ -559,15 +824,19 @@ export class CombatScreen implements Screen {
         items.length ? h('div', { class: 'ab-group' }, h('div', { class: 'ab-label' }, 'Items'), h('div', { class: 'ab-btns' }, items)) : null),
       h('div', { class: 'ab-end' },
         this.selected ? h('div', { class: 'hint' }, `Select a target for ${this.selected.name} (right-click to cancel)`) : h('div', { class: 'hint' }, 'Click a square to move, an enemy to attack.'),
-        this.cb.canFlee() ? h('button', { class: 'btn ghost', onclick: () => { if (confirm('Retreat from this fight?')) { this.cb.flee(); this.finish(); } } }, t('combat.flee')) : null,
+        this.cb.canFlee() ? h('button', { class: 'btn ghost', onclick: () => { if (this.isPlayerTurn() && confirm('Retreat from this fight?')) { this.cb.flee(); this.finish(); } } }, t('combat.flee')) : null,
         h('button', { class: 'btn', onclick: () => this.endTurn() }, `${t('combat.endTurn')} (Space)`)));
   }
 
   private useItemFlow(itemId: string): void {
+    if (!this.isPlayerTurn()) return;
     const c = this.cur;
     const adj = this.cb.combatants.filter((x) => x.side === 'party' && !x.char.dead && dist(x, c) <= 1);
     const def = ITEM_BY_ID[itemId];
-    const go = (id?: string) => { try { this.consume(this.cb.useItem(c, itemId, id)); this.afterPlayerAction(); } catch (e: any) { toast(e.message, 'bad'); } };
+    const go = (id?: string) => {
+      if (!this.isPlayerTurn() || this.cur.id !== c.id) return;
+      try { this.consume(this.cb.useItem(c, itemId, id), { actorId: c.id }); this.afterPlayerAction(); } catch (e: any) { toast(e.message, 'bad'); }
+    };
     if (def.use?.kind === 'heal' && adj.length > 1) {
       modal(`Use ${def.name}`, (close) => h('div', { class: 'col' }, adj.map((x) => h('button', { class: 'btn', onclick: () => { close(); go(x.id); } }, `${x.char.name} (${x.char.hp}/${x.char.maxHp})`))));
     } else go();
@@ -631,9 +900,8 @@ export class CombatScreen implements Screen {
     const view = this.view, ts = this.ts, b = this.cb.bounds;
     const { bounds: visualBounds, grid, architecture, buildings } = this.boardFrame();
     const gridWidth = grid[0].length;
-    const dt = Math.min(50, this.lastFrame ? time - this.lastFrame : 16.67);
-    this.lastFrame = time;
     const now = performance.now();
+    const reducedMotion = this.reducedMotion(), instant = settings().cpuSpeed === 'instant';
 
     const backdrop = ctx.createRadialGradient(width * 0.48, height * 0.45, 30, width * 0.48, height * 0.45, Math.max(width, height) * 0.68);
     backdrop.addColorStop(0, '#171a24'); backdrop.addColorStop(0.55, '#0d121a'); backdrop.addColorStop(1, '#050810');
@@ -704,13 +972,11 @@ export class CombatScreen implements Screen {
 
     // Animate positions before sorting: foreground terrain and figures share a
     // single painter order, so a moving adventurer can pass behind a pillar.
-    const actors = this.cb.combatants.filter((c) => !(c.removed && c.side === 'enemy')).map((c) => {
+    const actors = this.cb.combatants.filter((c) => !(c.removed && c.side === 'enemy') || this.retained.has(c.id)).map((c) => {
       const d = this.disp.get(c.id) ?? { x: c.x, y: c.y, queue: [] };
       if (!this.disp.has(c.id)) this.disp.set(c.id, d);
-      const target = d.queue[0] ?? { x: c.x, y: c.y };
-      if (walkToward(d, target.x, target.y, dt, COMBAT_WALK_MS[settings().cpuSpeed] ?? WALK_MS_PER_TILE) && d.queue.length) d.queue.shift();
       const p = isoPoint(d.x, d.y, view);
-      p.y -= isoElevation(this.cb.tileChar(c.x, c.y), ts);
+      p.y -= isoElevation(this.cb.tileChar(Math.round(d.x), Math.round(d.y)), ts);
       return { c, d, p };
     });
     const layers: { depth: number; draw: () => void }[] = [];
@@ -722,14 +988,14 @@ export class CombatScreen implements Screen {
       if (ch === '#' && ![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => tile(this.cb.tileChar(x + dx, y + dy)).walk)) continue;
       const p = isoPoint(x, y, view);
       const tree = ch === 'T' || ch === 't';
-      const fade = actors.some((a) => a.c.char.hp > 0 && Math.abs(a.p.x - p.x) < ts * (tree ? .95 : .6) && a.p.y < p.y + ts * .15 && a.p.y > p.y - ts * (tree ? 2.65 : 1.65));
+      const fade = actors.some((a) => !this.fallen.has(a.c.id) && Math.abs(a.p.x - p.x) < ts * (tree ? .95 : .6) && a.p.y < p.y + ts * .15 && a.p.y > p.y - ts * (tree ? 2.65 : 1.65));
       layers.push({ depth: x + y + 0.1, draw: () => drawIsoProp(ctx, ch, x, y, view, this.cb.map.tileset, time, { fade: fade ? 0.3 : 1 }) });
     }
     for (const building of buildings) {
       const pts = [isoPoint(building.x - 0.5, building.y - 0.5, view), isoPoint(building.x + building.w - 0.5, building.y - 0.5, view),
         isoPoint(building.x + building.w - 0.5, building.y + building.h - 0.5, view), isoPoint(building.x - 0.5, building.y + building.h - 0.5, view)];
       const left = Math.min(...pts.map(p => p.x)), right = Math.max(...pts.map(p => p.x)), top = Math.min(...pts.map(p => p.y)) - ts * 2, bottom = Math.max(...pts.map(p => p.y));
-      const fade = actors.some(a => a.c.char.hp > 0 && a.p.x > left && a.p.x < right && a.p.y > top && a.p.y < bottom) ? 0.3 : 1;
+      const fade = actors.some(a => !this.fallen.has(a.c.id) && a.p.x > left && a.p.x < right && a.p.y > top && a.p.y < bottom) ? 0.3 : 1;
       layers.push({ depth: building.x + building.w - 1 + building.y + building.h - 1,
         draw: () => drawIsoBuilding(ctx, building, view, time, this.cb.map.tileset, fade) });
     }
@@ -757,12 +1023,13 @@ export class CombatScreen implements Screen {
       const { c, p, d } = actor, ch = c.char;
       const color = c.side === 'enemy' ? (ENEMY_BY_ID[ch.templateId ?? '']?.color ?? '#c66') : `hsl(${ch.companionId ? COMPANION_BY_ID[ch.companionId].hue : ch.portrait.hue},45%,62%)`;
       const glyph = c.side === 'enemy' ? (ENEMY_BY_ID[ch.templateId ?? '']?.glyph ?? '') : '';
-      const impact = Math.max(0, (this.impactUntil.get(c.id) ?? 0) - now);
-      const recoil = impact ? Math.sin(impact / 18) * ts * 0.045 * (impact / 260) : 0;
+      const down = this.fallen.has(c.id);
+      const gait = walkPose(d.distance ?? 0, d.direction ?? { x: 0, y: 0 }, { moving: d.moving, reducedMotion, instant });
+      const pose = combinePoses(gait, this.animations.poseFor(c.id, reducedMotion), down ? fallenPose(this.fallDirection.get(c.id)) : null);
       if ((ch.traits ?? []).includes('echo_touched')) glow(ctx, p.x, p.y - ts * 0.3, ts * 0.32, 'rgba(180,150,255,0.18)');
-      drawIsoToken(ctx, p.x + recoil, p.y, ts, color, glyph, {
-        character: ch, role: ch.classId, enemy: c.side === 'enemy', dim: ch.hp <= 0, down: ch.hp <= 0,
-        selected: c.id === this.cur.id && !this.cb.over, time, facing: d.queue.length ? Math.atan2(d.queue[0].y - d.y, d.queue[0].x - d.x) : undefined,
+      drawIsoToken(ctx, p.x, p.y, ts, color, glyph, {
+        character: ch, role: ch.classId, enemy: c.side === 'enemy', dim: down, down, pose,
+        selected: c.id === this.cur.id && !this.cb.over, time, facing: d.direction ? Math.atan2(d.direction.y, d.direction.x) : undefined,
       });
       if (ch.conditions.some((k) => ['stunned', 'incapacitated', 'prone', 'restrained', 'frightened', 'poisoned'].includes(k.id))) {
         ctx.save(); ctx.strokeStyle = '#edc991'; ctx.lineWidth = 1.3;
@@ -774,9 +1041,9 @@ export class CombatScreen implements Screen {
     layers.sort((a, b2) => a.depth - b2.depth);
     for (const layer of layers) layer.draw();
 
-    this.flashes = this.flashes.filter((f) => now - f.born < 700);
+    this.flashes = this.flashes.filter((f) => now - f.born < f.duration);
     for (const flash of this.flashes) {
-      const k = Math.max(0, (now - flash.born) / 700);
+      const k = Math.max(0, (now - flash.born) / flash.duration);
       ctx.save(); ctx.globalAlpha = (1 - k) * 0.7;
       for (const p of flash.tiles) {
         if (!this.cb.inBounds(p.x, p.y)) continue;
@@ -785,9 +1052,9 @@ export class CombatScreen implements Screen {
       }
       ctx.restore();
     }
-    this.strikes = this.strikes.filter((s) => now - s.born < 350);
+    this.strikes = this.strikes.filter((s) => now - s.born < s.duration);
     for (const strike of this.strikes) {
-      const k = (now - strike.born) / 350, a = isoPoint(strike.from.x, strike.from.y, view), z = isoPoint(strike.to.x, strike.to.y, view);
+      const k = (now - strike.born) / strike.duration, a = isoPoint(strike.from.x, strike.from.y, view), z = isoPoint(strike.to.x, strike.to.y, view);
       a.y -= ts * 0.4; z.y -= ts * 0.45;
       ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k); ctx.lineCap = 'round';
       ctx.strokeStyle = strike.crit ? '#ffe0a0' : strike.hit ? '#e0c4a1' : '#889bab'; ctx.lineWidth = strike.crit ? 4 : 2;

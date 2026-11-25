@@ -36,6 +36,7 @@ import { openSettings } from './settingsView';
 import { openCamp } from './camp';
 import { rollDie } from '../../core/dice';
 import { walkToward, WALK_MS_PER_TILE } from '../render/motion';
+import { walkPose, fallenPose, type MiniaturePose } from '../render/miniatureAnimation';
 
 interface Float { x: number; y: number; text: string; color: string; born: number; }
 
@@ -51,7 +52,8 @@ export class ExploreScreen implements Screen {
   private panY = 0;
   private showGrid = false;
   private drag: { x: number; y: number; ox: number; oy: number } | null = null;
-  private actors = new Map<string, { x: number; y: number; facing: number }>();
+  private actors = new Map<string, { x: number; y: number; facing: number; stride: number; pose?: MiniaturePose }>();
+  private motionPreference = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   private lastFrameTime = 0;
   private hitActors: { x: number; y: number; w: number; h: number; tileX: number; tileY: number }[] = [];
   private bindPointerEvents: (() => void) | null = null;
@@ -640,16 +642,25 @@ export class ExploreScreen implements Screen {
     }
     const dt = Math.min(60, this.lastFrameTime ? time - this.lastFrameTime : 16);
     this.lastFrameTime = time;
+    const reducedMotion = this.motionPreference?.matches ?? false;
     const partyPoints: { x: number; y: number }[] = [];
     this.hitActors = [];
     for (let i = 0; i < party.length; i++) {
       const c = party[i], target = positions[i];
       const tx = target.x, ty = target.y;
       let a = this.actors.get(c.id);
-      if (!a || Math.hypot(a.x - tx, a.y - ty) > 6) { a = { x: tx, y: ty, facing: 1 }; this.actors.set(c.id, a); }
+      if (!a || Math.hypot(a.x - tx, a.y - ty) > 6) { a = { x: tx, y: ty, facing: 1, stride: 0 }; this.actors.set(c.id, a); }
       const dx = tx - a.x, dy = ty - a.y;
       if (Math.abs(dx - dy) > .01) a.facing = dx - dy < 0 ? -1 : 1;
+      const fromX = a.x, fromY = a.y;
       walkToward(a, tx, ty, dt);
+      // Drive the step from actual displayed travel, never from game positions or dice.
+      const travelled = Math.max(Math.abs(a.x - fromX), Math.abs(a.y - fromY));
+      const moving = travelled > .0001;
+      a.stride = moving ? a.stride + travelled : 0;
+      a.pose = c.hp <= 0 ? fallenPose(a.facing) : moving
+        ? walkPose(a.stride, { x: (dx - dy) / 2, y: (dx + dy) / 4 }, { moving, reducedMotion })
+        : reducedMotion ? {} : undefined;
       const p = isoPoint(a.x, a.y, view);
       p.y -= isoElevation(tileAt(state, m, target.x, target.y), tw);
       partyPoints.push(p);
@@ -701,7 +712,7 @@ export class ExploreScreen implements Screen {
       const elev = isoElevation(tileAt(state, m, o.x, o.y), tw);
       if (o.kind === 'npc' && visible) {
         layers.push({ depth: o.x + o.y + .08, draw: () => {
-          drawIsoToken(ctx, p.x, p.y - elev, tw, npcColor(o), '', { npcId: o.id, role: o.name, time, selected: this.hover?.x === o.x && this.hover?.y === o.y });
+          drawIsoToken(ctx, p.x, p.y - elev, tw, npcColor(o), '', { npcId: o.id, role: o.name, time: reducedMotion ? 0 : time, pose: reducedMotion ? {} : undefined, selected: this.hover?.x === o.x && this.hover?.y === o.y });
           this.hitActors.push({ x: p.x, y: p.y - elev, w: tw * .64, h: tw * 1.12, tileX: o.x, tileY: o.y });
         } });
       } else if (o.kind === 'container' && !rt.removed.includes(o.id) && tileAt(state, m, o.x, o.y) !== 'c') {
@@ -737,7 +748,7 @@ export class ExploreScreen implements Screen {
     for (let i = 0; i < party.length; i++) {
       const c = party[i], a = this.actors.get(c.id)!, p = partyPoints[i];
       const hue = c.companionId ? COMPANION_BY_ID[c.companionId].hue : c.portrait.hue;
-      layers.push({ depth: a.x + a.y + .12, draw: () => drawIsoToken(ctx, p.x, p.y, tw, `hsl(${hue},45%,62%)`, '', { character: c, selected: i === 0, dim: c.hp <= 0, time, facing: a.facing }) });
+      layers.push({ depth: a.x + a.y + .12, draw: () => drawIsoToken(ctx, p.x, p.y, tw, `hsl(${hue},45%,62%)`, '', { character: c, selected: i === 0, dim: c.hp <= 0, time: reducedMotion ? 0 : time, facing: a.facing, pose: a.pose }) });
       const b = c.companionId ? this.bubbles.get(c.companionId) : undefined;
       if (b && b.until > performance.now()) late.push(() => this.drawBubble(ctx, p.x, p.y - tw * .95, b.text));
     }

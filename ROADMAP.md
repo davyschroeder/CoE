@@ -44,7 +44,8 @@ Whispering Woods, ruins of Valdros, Ashenford; recruitment of the remaining seve
 ## Visual editions ✅ (v0.3.1–v0.4)
 Aetherfall Visual Edition (painted title art, companion portraits, map of Elyndra, interface theme) and Aetherfall Isometric Edition (isometric exploration and combat, painted miniatures, scenery, materials, player and NPC portraits). Art and renderer made with ChatGPT; integrated, fixed and browser-tested here. See `docs/VISUAL_EDITION.md`, `docs/ISOMETRIC_EDITION.md`.
 - [x] Steady walking pace for miniatures (320 ms a tile; combat follows the CPU-speed setting)
-- [ ] Frame-by-frame walk and attack animations for miniatures
+- [x] Walking and combat animation on the painted miniatures (step, lunge, cast glow, dodge, recoil, fall) — code-driven, see `docs/ANIMATION_UPDATE.md`
+- [ ] Frame-by-frame sprite animation (would need new art)
 - [ ] Painted miniatures for the minor NPCs that still use a plain fallback figure
 
 ## Phase 5 — Acts II–VI
