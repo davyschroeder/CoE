@@ -53,6 +53,22 @@ export function modal(title: string, content: HTMLElement | ((close: () => void)
   return handle;
 }
 
+/**
+ * In-game yes/no question. Never use the browser's confirm(): embedded views (such as the online
+ * artifact) block it and it silently answers "no".
+ */
+export function ask(title: string, text: string, yes = 'Yes', no = 'Cancel'): Promise<boolean> {
+  return new Promise((resolve) => {
+    let answered = false;
+    const answer = (v: boolean) => { if (!answered) { answered = true; resolve(v); } };
+    modal(title, (close) => h('div', { class: 'confirm' },
+      h('p', null, text),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', onclick: () => { answer(true); close(); } }, yes),
+        h('button', { class: 'btn ghost', onclick: () => { answer(false); close(); } }, no))), { onClose: () => answer(false) });
+  });
+}
+
 export function topModal(): ModalHandle | undefined { return modalStack[modalStack.length - 1]; }
 export function closeAllModals(): void { [...modalStack].forEach((m) => m.close()); }
 

@@ -25,6 +25,7 @@ Read this before changing anything. These rules come from real problems in earli
 | Walking pace: `WALK_MS_PER_TILE` and `walkToward()` in `src/ui/render/motion.ts`. Keep using them; change the number only if asked. | exploration, combat | The owner asked for this pace. |
 | Autosave: after character creation, after conversations, when the page is hidden or closed, and every minute (`src/ui/app.ts`). | `src/ui/app.ts` | Without it, Continue on the main menu was never available. |
 | Tooltips react to a real mouse only (`installTooltips` in `src/ui/dom.ts`). Nothing may depend on hover alone: the game is also played on phones. | `src/ui/dom.ts` | A tap left an empty tooltip box stuck over the dialogue text. |
+| Never use the browser's `confirm()`, `alert()` or `prompt()`: embedded views (the online version, app web views) block them and answer "no" silently. Ask in the game with `ask()` from `src/ui/dom.ts`. | all UI | Moving past enemies, fleeing and overwriting, loading or deleting saves silently failed online. |
 | Game rules, story, quests, balance and save data (`src/engine/`, `src/rules/`, `src/data/`) do not change in a visual update. If the save data must change, raise `SAVE_VERSION` and add a migration in `src/engine/save.ts`. | engine, data | Saves of players must keep loading. |
 | Presentation code never uses the game's dice or random generator (`src/core/rng.ts`). Use `performance.now()` or a hash of positions. | renderer | Tests replay games with fixed dice; extra random calls change outcomes. |
 
@@ -43,7 +44,7 @@ Run all of these and report the results honestly:
 ```bash
 npm ci
 npx tsc --noEmit        # must be clean
-npm test                # every test must pass (at the time of writing: 162 tests in 20 files)
+npm test                # every test must pass (at the time of writing: 193 tests in 24 files)
 npm run build           # must succeed
 ```
 

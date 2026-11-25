@@ -1,5 +1,5 @@
 import type { App, Screen } from '../app';
-import { h, clear, toast, bar, modal } from '../dom';
+import { h, clear, toast, bar, modal, ask } from '../dom';
 import { Combat, dist, CONDITION_RULES, CONDITION_WORDS, type Combatant, type CombatEvent, type Target } from '../../engine/combat/combat';
 import { aiStep } from '../../engine/combat/ai';
 import { ACTION_BY_ID, type ActionDef } from '../../data/actions';
@@ -692,9 +692,12 @@ export class CombatScreen implements Screen {
         const path = this.cb.pathTo(c, p.x, p.y);
         if (path) {
           const prov = this.cb.provokers(c, path);
-          if (prov.length && !confirm(`Moving there provokes ${prov.length} opportunity attack(s) from ${prov.map((x) => x.char.name).join(', ')}. Move anyway?`)) return;
-          this.consume(this.cb.moveAlong(c, path), { actorId: c.id });
-          this.afterPlayerAction();
+          const move = () => { this.consume(this.cb.moveAlong(c, path), { actorId: c.id }); this.afterPlayerAction(); };
+          if (!prov.length) move();
+          else void ask('Opportunity attacks', `Moving there provokes ${prov.length} opportunity attack(s) from ${prov.map((x) => x.char.name).join(', ')}. Move anyway?`, 'Move anyway', 'Stay').then((ok) => {
+            if (!ok || !this.isPlayerTurn() || this.cur !== c) return;
+            try { move(); } catch (err: any) { toast(err.message ?? String(err), 'bad', 2000); }
+          });
         }
       }
     } catch (err: any) {
@@ -824,7 +827,7 @@ export class CombatScreen implements Screen {
         items.length ? h('div', { class: 'ab-group' }, h('div', { class: 'ab-label' }, 'Items'), h('div', { class: 'ab-btns' }, items)) : null),
       h('div', { class: 'ab-end' },
         this.selected ? h('div', { class: 'hint' }, `Select a target for ${this.selected.name} (right-click to cancel)`) : h('div', { class: 'hint' }, 'Click a square to move, an enemy to attack.'),
-        this.cb.canFlee() ? h('button', { class: 'btn ghost', onclick: () => { if (this.isPlayerTurn() && confirm('Retreat from this fight?')) { this.cb.flee(); this.finish(); } } }, t('combat.flee')) : null,
+        this.cb.canFlee() ? h('button', { class: 'btn ghost', onclick: () => { if (this.isPlayerTurn()) void ask('Retreat', 'Retreat from this fight?', 'Retreat', 'Keep fighting').then((ok) => { if (ok && this.isPlayerTurn()) { this.cb.flee(); this.finish(); } }); } }, t('combat.flee')) : null,
         h('button', { class: 'btn', onclick: () => this.endTurn() }, `${t('combat.endTurn')} (Space)`)));
   }
 
