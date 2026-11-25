@@ -23,9 +23,18 @@ function ensure(): AudioContext | null {
   return ctx;
 }
 
+let ducked = false;
+
 export function applyVolumes(): void {
-  if (musicGain) musicGain.gain.value = settings().musicVolume * 0.5;
+  if (musicGain) musicGain.gain.value = settings().musicVolume * 0.5 * (ducked ? 0.3 : 1);
   if (sfxGain) sfxGain.gain.value = settings().sfxVolume;
+}
+
+/** Lower the music while narration plays. */
+export function duckMusic(on: boolean): void {
+  if (ducked === on) return;
+  ducked = on;
+  applyVolumes();
 }
 
 export function unlockAudio(): void {

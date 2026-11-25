@@ -15,6 +15,7 @@ import { getMap, resetTriggerMemory, music } from '../engine/exploration';
 import { canLevelUp } from '../engine/character';
 import { clear, closeAllModals, toast, modal, h } from './dom';
 import { playMusic, sfx } from '../audio/audio';
+import { stopNarration } from '../audio/narration';
 import { MainMenu } from './screens/mainMenu';
 import { ExploreScreen } from './screens/explore';
 import { CombatScreen } from './screens/combat';
@@ -79,6 +80,7 @@ export class App {
 
   showMenu(): void {
     closeAllModals();
+    stopNarration();
     this.state = null;
     this.explore = null;
     playMusic('menu');

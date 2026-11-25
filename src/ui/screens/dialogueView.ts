@@ -1,4 +1,5 @@
 import type { App } from '../app';
+import { narrate, stopNarration } from '../../audio/narration';
 import type { DialogueTree } from '../../data/schema';
 import type { Signal } from '../../engine/effects';
 import { DialogueSession } from '../../engine/dialogue';
@@ -33,6 +34,7 @@ export function openDialogue(app: App, tree: DialogueTree, onEnd: (signals: Sign
 
   const finish = () => {
     if (typing) clearInterval(typing);
+    stopNarration();
     clear(layer);
     onEnd(flow);
   };
@@ -61,6 +63,7 @@ export function openDialogue(app: App, tree: DialogueTree, onEnd: (signals: Sign
     clear(root);
     if (session.ended) { finish(); return; }
     const v = session.view();
+    narrate(tree.id, v.nodeId);
     const textEl = h('div', { class: 'd-text' });
     const head = h('div', { class: 'd-head' },
       h('div', { class: 'd-portrait', html: speakerPortrait(v.speaker) }),

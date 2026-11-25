@@ -2,6 +2,7 @@ import type { App } from '../app';
 import { h, modal, clear, put } from '../dom';
 import { settings, updateSettings, type Settings } from '../../core/settings';
 import { applyVolumes } from '../../audio/audio';
+import { applyNarrationVolume } from '../../audio/narration';
 
 export function openSettings(app: App): void {
   const root = h('div', { class: 'settings' });
@@ -30,6 +31,7 @@ export function openSettings(app: App): void {
       h('h4', null, 'Audio'),
       rng('Music volume', 'musicVolume', 0, 1, 0.05),
       rng('Effects volume', 'sfxVolume', 0, 1, 0.05),
+      rng('Narration voice (0 = off)', 'voiceVolume', 0, 1, 0.05),
       app.state ? h('p', { class: 'muted small' }, `Difficulty: ${app.state.difficulty}${app.state.rules.permadeath ? ' · permadeath' : ''}${app.state.rules.limitedRest ? ' · limited rest' : ''} (chosen at character creation).`) : null,
       app.state ? h('div', { class: 'set-row' }, h('span', null, 'Difficulty'), h('select', { onchange: (e: Event) => { app.state!.difficulty = (e.target as HTMLSelectElement).value as any; } },
         ['storyteller', 'adventurer', 'veteran', 'tactician'].map((d) => h('option', { value: d, selected: app.state!.difficulty === d }, d)))) : null);
@@ -38,6 +40,7 @@ export function openSettings(app: App): void {
     updateSettings({ [k]: v } as any);
     document.documentElement.style.setProperty('--font-scale', String(settings().fontScale));
     applyVolumes();
+    applyNarrationVolume();
     render();
   };
   render();

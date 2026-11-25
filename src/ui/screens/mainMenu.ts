@@ -79,6 +79,7 @@ function credits(): void {
     h('p', null, h('b', null, 'Chronicles of Aether: The Shattered Veil')),
     h('p', null, 'An original fantasy role-playing game inspired by tabletop d20 play. All setting, characters and text are original.'),
     h('p', null, 'Design, writing and code: built iteratively with Claude Code for the project owner.'),
-    h('p', null, 'Isometric Edition: painted character portraits and miniatures, layered isometric environments, illustrated scenery and atmospheric effects. All artwork is packaged locally. Audio is generated at runtime.'),
+    h('p', null, 'Isometric Edition: painted character portraits and miniatures, layered isometric environments, illustrated scenery and atmospheric effects. All artwork is packaged locally. Music and sound effects are generated at runtime.'),
+    h('p', null, 'Opening narration voiced with ElevenLabs (voice: Darren).'),
     h('p', null, 'Rules: an original d20 system using openly reusable tabletop mechanics (ability scores, proficiency, advantage).'))));
 }

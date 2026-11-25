@@ -124,6 +124,10 @@ Made with ChatGPT as an update package and merged here; details in `docs/ISOMETR
 - **Changed during the merge:** the update shipped the original theme CSS with the two layout bugs fixed in v0.3.1 (character creation could not be finished; the HUD collapsed) — the fixed theme is kept. Six companions (Kael, Seris, Nima, Ilyra, Varek, Korr) were mapped to shared archetype faces that NPCs and player choices also use (Seris looked like Captain Dray); they keep their own painted portraits, so every companion has a unique face (guarded by `tests/visuals.test.ts`). The unused Dutch UI table was removed.
 - **Tests:** 158 in 19 files, incl. the update's projection, sprite selection, combat hit-testing, building-footprint and material-loading tests. Checked in Chromium: menu, all creation steps incl. the portrait gallery, exploration in Hollowmere, Ashenford and Valdros (ruin and other realities), the Senate Dome, world map, dialogue and a combat round — no console errors.
 
+## Narration (v0.4.5)
+
+The opening scene ("Arrival", the first two Dungeon Master screens) is narrated by a recorded voice made with ElevenLabs (voice: Darren), `public/audio/narration/prologue-arrival.mp3`. `src/data/narration.ts` maps recordings to dialogue nodes; `src/audio/narration.ts` plays a clip while the player is on its nodes, stops it when they move on or the dialogue closes, and ducks the music meanwhile. Settings → Audio → "Narration voice" sets the volume (0 = off). A missing file is silent. Checked in Chromium: plays on screen 1, continues on screen 2, stops afterwards. Only this scene is voiced so far.
+
 ## Known limitations / honest notes
 
 - **The Prologue and Act I are content-complete; Acts II–VI are not built.** After the Act I epilogue you can keep exploring the Act I regions; Act II regions on the world map stay locked.
@@ -137,7 +141,7 @@ Made with ChatGPT as an update package and merged here; details in `docs/ISOMETR
 - Companion personal quests have one chapter each (Phase 3); their outcomes colour Act I scenes and the epilogue, follow-up chapters are for later acts.
 - Romance is limited to optional hints in camp talks.
 - Combat arenas use the exploration map; very large maps may produce wide arenas.
-- Audio is procedural and simple; there are no recorded music/voice assets.
+- Music and effects are procedural and simple. Only the opening scene has recorded narration.
 - Art: miniatures are single illustrated poses (no frame-by-frame walk or attack cycles); the world is 2.5D Canvas, not 3D. Some minor NPCs without a matching miniature are drawn as a plain fallback figure. Several enemies of one type share a miniature; NPCs share archetype portraits.
 - The painted atlases (`public/art/`, ~22 MB of PNG) make the first load heavier than before.
 - The game is English-only by design.

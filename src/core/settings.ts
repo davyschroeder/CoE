@@ -8,6 +8,8 @@ export interface Settings {
   fontScale: number;
   musicVolume: number;
   sfxVolume: number;
+  /** Recorded narration volume; 0 turns narration off. */
+  voiceVolume: number;
   companionChatter: 'low' | 'normal' | 'high';
   language: 'en';
 }
@@ -15,7 +17,7 @@ export interface Settings {
 const KEY = 'coe.settings';
 export const DEFAULT_SETTINGS: Settings = {
   cpuSpeed: 'normal', manualDice: false, showDiceDetails: true, hideEnemyHp: false, autoEndTurn: true,
-  textSpeed: 'fast', fontScale: 1, musicVolume: 0.35, sfxVolume: 0.6, companionChatter: 'normal', language: 'en',
+  textSpeed: 'fast', fontScale: 1, musicVolume: 0.35, sfxVolume: 0.6, voiceVolume: 0.9, companionChatter: 'normal', language: 'en',
 };
 
 let current: Settings = { ...DEFAULT_SETTINGS };
