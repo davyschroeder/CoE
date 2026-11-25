@@ -35,6 +35,17 @@ export class App {
   constructor(public root: HTMLElement) {
     setInterval(() => this.tick(), 1000);
     window.addEventListener('keydown', (e) => this.onKey(e));
+    // Save quietly when the player leaves: closing the tab or app, switching apps on a phone.
+    const leaving = () => this.safeAutosave();
+    window.addEventListener('pagehide', leaving);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) leaving(); });
+    // And now and then while playing, so a crash or a killed browser loses little.
+    setInterval(() => this.safeAutosave(), 60_000);
+  }
+
+  /** Quiet autosave at a safe moment: not during a conversation or a fight (their state is not in the save). */
+  safeAutosave(): void {
+    if (this.state && !this.busy && this.screen === this.explore) this.autosave('', true);
   }
 
   private tick(): void {
@@ -84,6 +95,8 @@ export class App {
     this.explore = new ExploreScreen(this);
     this.setScreen(this.explore);
     if (fresh) {
+      // A new adventure has a save from the first moment, so Continue works even if the tab is closed early.
+      this.autosave('new adventure');
       this.openDialogue('intro');
     } else {
       addLog(state, 'system', 'Game loaded.');
@@ -100,9 +113,9 @@ export class App {
     }
   }
 
-  autosave(reason: string): void {
+  autosave(reason: string, quiet = false): void {
     if (!this.state) return;
-    try { saveGame(this.state, 'auto', true); addLog(this.state, 'system', `Autosaved (${reason}).`); }
+    try { saveGame(this.state, 'auto', true); if (!quiet) addLog(this.state, 'system', `Autosaved (${reason}).`); }
     catch (e) { console.warn('Autosave failed', e); }
   }
 
@@ -158,7 +171,8 @@ export class App {
     this.busy = true;
     openDialogue(this, tree, (signals) => {
       this.busy = false;
-      this.handleSignals(signals);
+      // After a conversation (unless it led into a fight or elsewhere, which save on their own).
+      this.handleSignals(signals).then(() => this.safeAutosave());
     });
   }
 
